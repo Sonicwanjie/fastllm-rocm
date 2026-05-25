@@ -10,7 +10,13 @@
 #include <fcntl.h>
 #include <mutex>
 #include <set>
+#ifdef _MSC_VER
+#include <io.h>
+#include <stdint.h>
+typedef intptr_t ssize_t;
+#else
 #include <unistd.h>
+#endif
 #include <unordered_map>
 #include <unordered_set>
 
@@ -141,7 +147,12 @@ namespace fastllm {
         int fd = GetDiskFileCache().Get(part.fileName);
         uint64_t done = 0;
         while (done < part.bytes) {
+            #ifdef _MSC_VER
+            _lseeki64(fd, part.fileOffset + done, SEEK_SET);
+            ssize_t ret = _read(fd, dst + done, (unsigned int)(part.bytes - done));
+#else
             ssize_t ret = pread(fd, dst + done, part.bytes - done, part.fileOffset + done);
+#endif
             if (ret < 0) {
                 ErrorInFastLLM("Disk MoE read weight failed: " + part.fileName + "\n");
             }

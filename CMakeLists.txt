@@ -145,7 +145,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread --std=c++17 -O2")
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     string(REPLACE "/Ob2" "/Ob1 /Gy" CMAKE_CXX_FLAGS_RELEASE ${CMAKE_CXX_FLAGS_RELEASE})
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DNOMINMAX /std:c++17 /arch:AVX2 /source-charset:utf-8")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DNOMINMAX /std:c++20 /arch:AVX2 /source-charset:utf-8")
     if (CXX_MAJOR_VERSION GREATER_EQUAL 19 AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
         set_source_files_properties(
             "src/devices/cpu/avx512f.cpp"

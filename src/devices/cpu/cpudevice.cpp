@@ -14,6 +14,9 @@
 #include <cmath>
 #include <atomic>
 #include <set>
+#ifdef _MSC_VER
+#include <malloc.h>
+#endif
 
 #ifdef __aarch64__
 #include <arm_neon.h>
@@ -2116,7 +2119,12 @@ namespace fastllm {
         
         // 为每个线程分配任务状态
         for (int i = 0; i < numThreads; i++) {
+            #ifdef _MSC_VER
+            taskStates[i] = (TaskState*)_aligned_malloc(sizeof(TaskState), 64);
+            new (taskStates[i]) TaskState();
+#else
             taskStates[i] = new (std::align_val_t{64}) TaskState();
+#endif
             taskStates[i]->curr.store(0, std::memory_order_relaxed);
             taskStates[i]->end = 0;
             taskStates[i]->completed.store(false, std::memory_order_relaxed);
@@ -2171,7 +2179,12 @@ namespace fastllm {
             if (taskStates[i] != nullptr) {
                 taskStates[i]->~TaskState();
                 #if __cpp_aligned_new >= 201606
+                    #ifdef _MSC_VER
+                    taskStates[i]->~TaskState();
+                    _aligned_free(taskStates[i]);
+#else
                     operator delete(taskStates[i], std::align_val_t{64});
+#endif
                 #else
                     free_aligned(taskStates[i], sizeof(TaskState));
                 #endif

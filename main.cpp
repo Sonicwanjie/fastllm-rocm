@@ -122,7 +122,7 @@ int main(int argc, char **argv) {
     fastllm::SetThreads(config.threads);
     fastllm::SetLowMemMode(config.lowMemMode);
     if (!fastllm::FileExists(config.path)) {
-        printf(u8"模型文件 %s 不存在！\n", config.path.c_str());
+        printf((const char*)u8"模型文件 %s 不存在！\n", config.path.c_str());
         exit(0);
     }
     bool isHFDir = fastllm::FileExists(config.path + "/config.json") || fastllm::FileExists(config.path + "config.json");
@@ -142,10 +142,10 @@ int main(int argc, char **argv) {
     fastllm::ChatMessages messages = config.systemPrompt.empty() ? fastllm::ChatMessages() : fastllm::ChatMessages({{"system", systemConfig}});
 
     static std::string modelType = model->model_type;
-    printf(u8"欢迎使用 %s 模型. 输入内容对话，reset清空历史记录，stop退出程序.\n", model->model_type.c_str());
+    printf((const char*)u8"欢迎使用 %s 模型. 输入内容对话，reset清空历史记录，stop退出程序.\n", model->model_type.c_str());
 
     while (true) {
-        printf(u8"用户: ");
+        printf((const char*)u8"用户: ");
         std::string input;
         std::getline(std::cin, input);
         if (input == "reset") {
