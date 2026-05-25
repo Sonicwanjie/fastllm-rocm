@@ -972,16 +972,6 @@ namespace fastllm {
                 k.Reshape({bsz, seqlen, -1, curHeadDim});
                 v.Reshape({bsz, seqlen, -1, curHeadDim});
 
-{
-                    auto &_kN = this->weight[kNormName];
-                    fprintf(stderr, "[DIAG] RMSNorm(k): k.dt=%d k.dev=%d k.cpu=%p k.gpu=%p k.dims=[%d,%d,%d,%d]\n",
-                        (int)k.dataType, (int)k.dataDevice, k.cpuData, k.cudaData,
-                        k.dims.size()>0?k.dims[0]:0, k.dims.size()>1?k.dims[1]:0,
-                        k.dims.size()>2?k.dims[2]:0, k.dims.size()>3?k.dims[3]:0);
-                    fprintf(stderr, "[DIAG] kNorm: dt=%d dev=%d cpu=%p gpu=%p\n",
-                        (int)_kN.dataType, (int)_kN.dataDevice, _kN.cpuData, _kN.cudaData);
-                    fflush(stderr);
-                }
                 RMSNorm(k, this->weight[kNormName], rms_norm_eps, k);
                 ApplyRMSNormNoScale(v, rms_norm_eps);
                 v.ToDevice(k.dataDevice);
@@ -1046,16 +1036,6 @@ namespace fastllm {
             q.Reshape({-1, seqlen, curHeadDim});
 
 
-            fprintf(stderr, "[DBG] Pre-Attention L%d: q=[%d,%d,%d] k=[%d,%d,%d] v=[%d,%d,%d] q.gpu=%p k.gpu=%p v.gpu=%p q.dt=%d k.dt=%d v.dt=%d q.dev=%d k.dev=%d v.dev=%d q.strides=[%d,%d,%d] k.strides=[%d,%d,%d] k.expansionBytes=%llu k.Count=%llu\n",
-                i, q.dims[0], q.dims[1], q.dims[2], pastKey.dims[0], pastKey.dims[1], pastKey.dims[2],
-                pastValue.dims[0], pastValue.dims[1], pastValue.dims[2],
-                q.cudaData, pastKey.cudaData, pastValue.cudaData,
-                (int)q.dataType, (int)pastKey.dataType, (int)pastValue.dataType,
-                (int)q.dataDevice, (int)pastKey.dataDevice, (int)pastValue.dataDevice,
-                q.strides.size()>0?q.strides[0]:0, q.strides.size()>1?q.strides[1]:0, q.strides.size()>2?q.strides[2]:0,
-                pastKey.strides.size()>0?pastKey.strides[0]:0, pastKey.strides.size()>1?pastKey.strides[1]:0, pastKey.strides.size()>2?pastKey.strides[2]:0,
-                (unsigned long long)pastKey.expansionBytes, (unsigned long long)pastKey.Count(0));
-            fflush(stderr);
 
             Attention(q, pastKey, pastValue, attentionMask, qkv, q.dims[0] / pastKey.dims[0], 1.0f, 1);
 
@@ -1768,11 +1748,6 @@ namespace fastllm {
                         size * logits.unitSize);
                 }
             }
-                    fprintf(stderr, "[%d]=%.3f ", bestIdx, bestVal);
-                    lastTokenLogits[bestIdx] = -1e30f;
-                }
-                fprintf(stderr, "\n"); fflush(stderr);
-            }
             TopK(logits, topk, 1);
             topk.ToDevice(DataDevice::CPU);
             for (int b = 0; b < batch; b++) {
@@ -1781,6 +1756,7 @@ namespace fastllm {
             }
         }
         return lastRet;
+    }
 
     std::vector <int> Gemma4Model::ForwardBatch(int batch,
                                                const Data &inputIds,
@@ -2302,3 +2278,4 @@ namespace fastllm {
                 pastKeyValues[i].second.dims[0] * pastKeyValues[i].second.dims[2];
         }
     }
+}
