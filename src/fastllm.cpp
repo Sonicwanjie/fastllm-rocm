@@ -1,4 +1,4 @@
-//
+﻿//
 // Created by huangyuyang on 5/11/23.
 //
 
@@ -2676,6 +2676,68 @@ namespace fastllm {
 
     std::string GetModelTypeFromFile(const std::string &fileName) {
         std::string ret = "unknown";
+        // Check if this is a GGUF file - lightweight header-only read
+        {
+            FILE *gf = fopen(fileName.c_str(), "rb");
+            if (gf) {
+                int gmagic;
+                if (fread(&gmagic, 4, 1, gf) == 1 && gmagic == 1179993927) { // "GGUF"
+                    // skip version(4) + n_tensors(8) + n_kv(8)
+                    fseek(gf, 4 + 8 + 8, SEEK_CUR);
+                    // read KV pairs until we find general.architecture
+                    uint64_t n_kv = 0;
+                    // re-read n_kv properly
+                    fseek(gf, 4 + 4, SEEK_SET); // after magic+version
+                    uint64_t n_tensors, n_kv_pair;
+                    fread(&n_tensors, 8, 1, gf);
+                    fread(&n_kv_pair, 8, 1, gf);
+                    for (uint64_t i = 0; i < n_kv_pair; i++) {
+                        // read key string
+                        uint64_t klen;
+                        fread(&klen, 8, 1, gf);
+                        std::vector<char> kbuf(klen + 1);
+                        fread(kbuf.data(), 1, klen, gf);
+                        kbuf[klen] = 0;
+                        std::string key(kbuf.data());
+                        // read value type
+                        int vtype;
+                        fread(&vtype, 4, 1, gf);
+                        if (key == "general.architecture" && vtype == 8) { // STRING
+                            uint64_t vlen;
+                            fread(&vlen, 8, 1, gf);
+                            std::vector<char> vbuf(vlen + 1);
+                            fread(vbuf.data(), 1, vlen, gf);
+                            vbuf[vlen] = 0;
+                            fclose(gf);
+                            return std::string(vbuf.data());
+                        }
+                        // skip value data based on type
+                        if (vtype == 0 || vtype == 1) fseek(gf, 1, SEEK_CUR); // u8/i8
+                        else if (vtype == 2 || vtype == 3) fseek(gf, 2, SEEK_CUR); // u16/i16
+                        else if (vtype == 4 || vtype == 5 || vtype == 6 || vtype == 7) fseek(gf, 4, SEEK_CUR); // u32/i32/f32/bool
+                        else if (vtype == 10 || vtype == 11 || vtype == 12) fseek(gf, 8, SEEK_CUR); // u64/i64/f64
+                        else if (vtype == 8) { // STRING
+                            uint64_t slen; fread(&slen, 8, 1, gf); fseek(gf, slen, SEEK_CUR);
+                        } else if (vtype == 9) { // ARRAY
+                            int at; uint64_t an;
+                            fread(&at, 4, 1, gf); fread(&an, 8, 1, gf);
+                            for (uint64_t j = 0; j < an; j++) {
+                                if (at == 8) { uint64_t slen; fread(&slen, 8, 1, gf); fseek(gf, slen, SEEK_CUR); }
+                                else if (at == 0 || at == 1) fseek(gf, 1, SEEK_CUR);
+                                else if (at == 2 || at == 3) fseek(gf, 2, SEEK_CUR);
+                                else if (at == 4 || at == 5 || at == 6 || at == 7) fseek(gf, 4, SEEK_CUR);
+                                else if (at == 10 || at == 11 || at == 12) fseek(gf, 8, SEEK_CUR);
+                                else { fclose(gf); goto not_gguf; }
+                            }
+                        } else { fclose(gf); goto not_gguf; }
+                    }
+                    fclose(gf);
+                    return "unknown";
+                }
+                fclose(gf);
+            }
+        }
+        not_gguf:
     #ifdef USE_MMAP
         std::unique_ptr<FileMmap> mapped_file = std::make_unique<FileMmap>(fileName);
         ModelLoader buffer((char *)mapped_file->data, mapped_file->size);

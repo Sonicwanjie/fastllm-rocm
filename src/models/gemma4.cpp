@@ -1,4 +1,4 @@
-﻿#include "utils.h"
+#include "utils.h"
 #include "gemma4.h"
 
 #include <sstream>
@@ -907,7 +907,11 @@ namespace fastllm {
 
         // Per-layer input preparation
         Data perLayerInputs;
-        if (hidden_size_per_layer_input > 0) {
+        bool pleEnabled = hidden_size_per_layer_input > 0 &&
+            weight.weight.find("model.language_model.embed_tokens_per_layer.weight") != weight.weight.end() &&
+            weight.weight.find("model.language_model.per_layer_model_projection.weight") != weight.weight.end() &&
+            weight.weight.find("model.language_model.per_layer_projection_norm.weight") != weight.weight.end();
+        if (pleEnabled) {
             std::string pleEmbName = "model.language_model.embed_tokens_per_layer.weight";
             Embedding(inputIds, this->weight[pleEmbName], perLayerInputs);
             int ple_bsz = hiddenStates.dims[0];
@@ -1066,7 +1070,7 @@ namespace fastllm {
             }
 
             // Per-layer input: gate + projection
-            if (hidden_size_per_layer_input > 0) {
+            if (pleEnabled) {
                 // Extract per-layer input for this layer: [batch, seq, ple_dim]
                 Data pleSlice;
                 Split(perLayerInputs, 2, i, i + 1, pleSlice);
@@ -1127,6 +1131,7 @@ namespace fastllm {
                    ((float*) logits.cpuData) + (logits.dims[1] - 1) * size,
                    (size_t) size * logits.unitSize);
         }
+
 
         TopK(logits, topk, 1);
         topk.ToDevice(DataDevice::CPU);
@@ -1486,7 +1491,11 @@ namespace fastllm {
 
         // Per-layer input: embed_tokens_per_layer(input_ids) -> [batch, seq, layers, ple_dim]
         Data perLayerInputs;
-        if (hidden_size_per_layer_input > 0) {
+        bool pleEnabled = hidden_size_per_layer_input > 0 &&
+            weight.weight.find("model.language_model.embed_tokens_per_layer.weight") != weight.weight.end() &&
+            weight.weight.find("model.language_model.per_layer_model_projection.weight") != weight.weight.end() &&
+            weight.weight.find("model.language_model.per_layer_projection_norm.weight") != weight.weight.end();
+        if (pleEnabled) {
             std::string pleEmbName = "model.language_model.embed_tokens_per_layer.weight";
             Embedding(inputIds, this->weight[pleEmbName], perLayerInputs);
             int ple_bsz = hiddenStates.dims[0];
@@ -1675,7 +1684,7 @@ namespace fastllm {
             }
 
             // Per-layer input: gate + projection
-            if (hidden_size_per_layer_input > 0) {
+            if (pleEnabled) {
                 // Extract per-layer input for this layer: [batch, seq, ple_dim]
                 Data pleSlice;
                 Split(perLayerInputs, 2, i, i + 1, pleSlice);
@@ -1826,7 +1835,11 @@ namespace fastllm {
 
         // Per-layer input: embed_tokens_per_layer(input_ids) -> [batch, seq, layers, ple_dim]
         Data perLayerInputs;
-        if (hidden_size_per_layer_input > 0) {
+        bool pleEnabled = hidden_size_per_layer_input > 0 &&
+            weight.weight.find("model.language_model.embed_tokens_per_layer.weight") != weight.weight.end() &&
+            weight.weight.find("model.language_model.per_layer_model_projection.weight") != weight.weight.end() &&
+            weight.weight.find("model.language_model.per_layer_projection_norm.weight") != weight.weight.end();
+        if (pleEnabled) {
             std::string pleEmbName = "model.language_model.embed_tokens_per_layer.weight";
             Embedding(inputIds, this->weight[pleEmbName], perLayerInputs);
             int ple_bsz = hiddenStates.dims[0];
@@ -2057,7 +2070,7 @@ namespace fastllm {
             }
 
             // Per-layer input: gate + projection
-            if (hidden_size_per_layer_input > 0) {
+            if (pleEnabled) {
                 // Extract per-layer input for this layer: [batch, seq, ple_dim]
                 Data pleSlice;
                 Split(perLayerInputs, 2, i, i + 1, pleSlice);

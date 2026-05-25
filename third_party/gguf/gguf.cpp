@@ -1,4 +1,4 @@
-#include <map>
+﻿#include <map>
 
 #include <assert.h>
 #include "gguf.h"
@@ -859,18 +859,65 @@ namespace fastllm {
             } else if (type == GGUF_TYPE_ARRAY) {
                 int type = ggufBuffer.Read <int> ();
                 uint64_t n = ggufBuffer.Read <uint64_t> ();
-                if (type == GGUF_TYPE_STRING) {
+                // skip large tokenizer arrays to avoid memory issues with json11
+                if (key.find("tokenizer.ggml.") == 0) {
+                    for (int i = 0; i < n; i++) {
+                        if (type == GGUF_TYPE_STRING) {
+                            uint64_t slen = ggufBuffer.Read <uint64_t> ();
+                            std::vector <char> tmp;
+                            tmp.resize(slen);
+                            ggufBuffer.ReadBytes((uint8_t *)tmp.data(), slen);
+                        } else if (type == GGUF_TYPE_INT32) {
+                            ggufBuffer.Read <int> ();
+                        } else if (type == GGUF_TYPE_FLOAT32) {
+                            ggufBuffer.Read <float> ();
+                        } else if (type == GGUF_TYPE_BOOL) {
+                            ggufBuffer.ReadBool();
+                        } else if (type == GGUF_TYPE_UINT32) {
+                            ggufBuffer.Read <uint32_t> ();
+                        } else if (type == GGUF_TYPE_UINT64) {
+                            ggufBuffer.Read <uint64_t> ();
+                        } else if (type == GGUF_TYPE_INT64) {
+                            ggufBuffer.Read <int64_t> ();
+                        }
+                    }
+                } else if (type == GGUF_TYPE_STRING) {
                     std::vector <std::string> value;
                     for (int i = 0; i < n; i++) {
                         value.push_back(ggufBuffer.ReadString());
                     }
-                    paramsConfig[key] = value; // std::vector <std::string> ({value[0], value[1]});
+                    paramsConfig[key] = value;
                 } else if (type == GGUF_TYPE_INT32) {
                     std::vector <int> value;
                     for (int i = 0; i < n; i++) {
                         value.push_back(ggufBuffer.Read <int> ());
                     }
-                    paramsConfig[key] = value; // std::vector <int> ({value[0], value[1]});
+                    paramsConfig[key] = value;
+                } else if (type == GGUF_TYPE_BOOL) {
+                    std::vector <int> value;
+                    for (int i = 0; i < n; i++) {
+                        bool b = ggufBuffer.ReadBool();
+                        value.push_back(b ? 1 : 0);
+                    }
+                    paramsConfig[key] = value;
+                } else if (type == GGUF_TYPE_FLOAT32) {
+                    std::vector <float> value;
+                    for (int i = 0; i < n; i++) {
+                        value.push_back(ggufBuffer.Read <float> ());
+                    }
+                    // store as comma-separated string for dict compatibility
+                    std::string s;
+                    for (int i = 0; i < (int)value.size(); i++) {
+                        if (i > 0) s += ",";
+                        s += std::to_string(value[i]);
+                    }
+                    paramsConfig[key] = s;
+                } else if (type == GGUF_TYPE_UINT32) {
+                    std::vector <int> value;
+                    for (int i = 0; i < n; i++) {
+                        value.push_back((int)ggufBuffer.Read <uint32_t> ());
+                    }
+                    paramsConfig[key] = value;
                 } else {
                     ErrorInFastLLM("Read GGUF_TYPE_ARRAY type " + std::to_string(type) + " error.\n");
                 }
@@ -878,7 +925,6 @@ namespace fastllm {
                 ErrorInFastLLM("Read GGUF_TYPE type " + std::to_string(type) + " error.\n");
             }
         }
-
         jsonConfig["params"] = paramsConfig;
         config = json11::Json(jsonConfig);
     }
@@ -916,6 +962,16 @@ namespace fastllm {
                         std::string value = ggufBuffer.ReadString();
                     } else if (type == GGUF_TYPE_INT32) {
                         int a = ggufBuffer.Read <int> ();
+                    } else if (type == GGUF_TYPE_BOOL) {
+                        bool a = ggufBuffer.ReadBool();
+                    } else if (type == GGUF_TYPE_FLOAT32) {
+                        float a = ggufBuffer.Read <float> ();
+                    } else if (type == GGUF_TYPE_UINT32) {
+                        uint32_t a = ggufBuffer.Read <uint32_t> ();
+                    } else if (type == GGUF_TYPE_UINT64) {
+                        uint64_t a = ggufBuffer.Read <uint64_t> ();
+                    } else if (type == GGUF_TYPE_INT64) {
+                        int64_t a = ggufBuffer.Read <int64_t> ();
                     }
                 }
             } else {
@@ -1082,12 +1138,21 @@ namespace fastllm {
             } else if (type == GGUF_TYPE_ARRAY) {
                 int type = ggufBuffer.Read <int> ();
                 uint64_t n = ggufBuffer.Read <uint64_t> ();
-                printf("type = %d\n", type);
                 for (int i = 0; i < n; i++) {
                     if (type == GGUF_TYPE_STRING) {
                         std::string value = ggufBuffer.ReadString();
                     } else if (type == GGUF_TYPE_INT32) {
                         int a = ggufBuffer.Read <int> ();
+                    } else if (type == GGUF_TYPE_BOOL) {
+                        bool a = ggufBuffer.ReadBool();
+                    } else if (type == GGUF_TYPE_FLOAT32) {
+                        float a = ggufBuffer.Read <float> ();
+                    } else if (type == GGUF_TYPE_UINT32) {
+                        uint32_t a = ggufBuffer.Read <uint32_t> ();
+                    } else if (type == GGUF_TYPE_UINT64) {
+                        uint64_t a = ggufBuffer.Read <uint64_t> ();
+                    } else if (type == GGUF_TYPE_INT64) {
+                        int64_t a = ggufBuffer.Read <int64_t> ();
                     }
                 }
             } else {

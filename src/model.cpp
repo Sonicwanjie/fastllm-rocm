@@ -1794,7 +1794,7 @@ namespace fastllm {
             {"qwen3moe", "qwen3_moe"}, {"qwen3_moe", "qwen3_moe"}, // qwen3_moe
             {"glm4_moe", "glm4_moe"}, // glm4_moe
             {"minimax_m2", "minimax_m2"}, // minimax_m2
-            {"deepseek2", "deepseek_v2"}, {"deepseek_v2", "deepseek_v2"},  {"deepseek_v3", "deepseek_v2"} // deepseek_v2
+            {"deepseek2", "deepseek_v2"}, {"deepseek_v2", "deepseek_v2"},  {"deepseek_v3", "deepseek_v2"}, {"gemma4", "gemma4"} // gemma4 // deepseek_v2
         };
         if (ggufTypeToFastllmTypeDict.find(type) != ggufTypeToFastllmTypeDict.end()) {
             return ggufTypeToFastllmTypeDict[type];
@@ -1804,7 +1804,9 @@ namespace fastllm {
         }
     }
 
+#if defined(USE_NUMAS)
     extern void RegisterNumas(fastllm::Data *data, std::string weightType);
+#endif
 
     std::unique_ptr<basellm> CreateLLMModelFromGGUFFile(const std::string &fileName, const std::string &originalPath) {
         std::vector <ReadGGUFTask> readGGUFTasks;
@@ -1930,7 +1932,7 @@ namespace fastllm {
 
             if (!params["tokenizer.chat_template"].is_null()) {
                 model->weight.tokenizer.chatTemplate = params["tokenizer.chat_template"].string_value();
-                printf("Load chatTemplate = %s\n", model->weight.tokenizer.chatTemplate.c_str());
+                printf("Load chatTemplate (len=%d)\n", (int)model->weight.tokenizer.chatTemplate.size());
             }
 
             int idx = 0;
@@ -1947,10 +1949,74 @@ namespace fastllm {
 
             // printf("config = %s\n", config.dump().c_str());
         }
-
         arch = ConvertGGUFTypeToFastllmType(arch);
 
-        // 3.0 更新模型信息
+        // Forward GGUF params to model dicts for gemma4
+        if (arch == "gemma4") {
+            // Helper: copy GGUF param as string (handles string/number types)
+            auto copyParam = [&](const std::string &from, const std::string &to) {
+                if (!params[from].is_null()) {
+                    if (params[from].is_string()) {
+                        model->weight.AddDict(to, params[from].string_value());
+                    } else if (params[from].is_number()) {
+                        double d = params[from].number_value();
+                        long long li = (long long)d;
+                        if (d == (double)li && d < 1e15 && d > -1e15) {
+                            model->weight.AddDict(to, std::to_string(li));
+                        } else {
+                            char buf[64];
+                            snprintf(buf, sizeof(buf), "%.15g", d);
+                            model->weight.AddDict(to, std::string(buf));
+                        }
+                    } else if (params[from].is_bool()) {
+                        model->weight.AddDict(to, params[from].bool_value() ? "true" : "false");
+                    }
+                }
+            };
+            copyParam("gemma4.context_length",                   "max_position_embeddings");
+            copyParam("gemma4.embedding_length",                 "hidden_size");
+            copyParam("gemma4.block_count",                      "num_hidden_layers");
+            copyParam("gemma4.feed_forward_length",              "intermediate_size");
+            copyParam("gemma4.attention.head_count",             "num_attention_heads");
+            copyParam("gemma4.attention.head_count_kv",          "num_key_value_heads");
+            copyParam("gemma4.attention.layer_norm_rms_epsilon", "rms_norm_eps");
+            copyParam("gemma4.attention.sliding_window",         "sliding_window");
+            copyParam("gemma4.expert_feed_forward_length",       "moe_intermediate_size");
+            copyParam("gemma4.expert_count",                     "num_experts");
+            copyParam("gemma4.expert_used_count",                "top_k_experts");
+            copyParam("gemma4.final_logit_softcapping",          "final_logit_softcapping");
+            copyParam("gemma4.embedding_length_per_layer",       "hidden_size_per_layer_input");
+            copyParam("gemma4.attention.shared_kv_layers",       "num_kv_shared_layers");
+            copyParam("gemma4.attention.rope_freq_base_swa",     "rope_parameters.sliding_attention.rope_theta");
+            copyParam("gemma4.attention.key_length_swa",         "head_dim");
+            copyParam("gemma4.attention.key_length",             "global_head_dim");
+            copyParam("gemma4.rope.freq_base",                   "rope_parameters.full_attention.rope_theta");
+            // attention_k_eq_v
+            model->weight.AddDict("attention_k_eq_v", "true");
+            // enable_moe_block
+            if (!params["gemma4.expert_count"].is_null() && params["gemma4.expert_count"].int_value() > 0) {
+                model->weight.AddDict("enable_moe_block", "true");
+            } else {
+                model->weight.AddDict("enable_moe_block", "false");
+            }
+            // layer_types as JSON array from sliding_window_pattern
+            if (!params["gemma4.attention.sliding_window_pattern"].is_null()) {
+                auto swaArr = params["gemma4.attention.sliding_window_pattern"].array_items();
+                std::string layerTypesStr = "[";
+                for (int li = 0; li < (int)swaArr.size(); li++) {
+                    if (li > 0) layerTypesStr += ",";
+                    layerTypesStr += (swaArr[li].int_value() != 0) ? "\"sliding_attention\"" : "\"full_attention\"";
+                }
+                layerTypesStr += "]";
+                model->weight.AddDict("layer_types", layerTypesStr);
+            }
+            // num_global_key_value_heads
+            copyParam("gemma4.attention.head_count_kv_swa",      "num_global_key_value_heads");
+            // partial_rotary_factor
+            copyParam("gemma4.attention.partial_rotary_factor",  "rope_parameters.full_attention.partial_rotary_factor");
+        }
+
+        // 3.0     // 3.0 更新模型信息
         model->InitParams();
 
         int cur = 0;
@@ -2232,6 +2298,10 @@ if (false) {
 
     std::unique_ptr<fastllm::basellm> CreateLLMModelFromFile(const std::string &fileName) {
         std::string modelType = GetModelTypeFromFile(fileName);
+        bool isGguf = IsGGUFFile(fileName);
+        if (isGguf) {
+            return CreateLLMModelFromGGUFFile(fileName, "");
+        }
         basellm *model = CreateModelWithType(modelType);
         if(modelType == "bert"){
             BertModel *bertModel = (BertModel*)model;
