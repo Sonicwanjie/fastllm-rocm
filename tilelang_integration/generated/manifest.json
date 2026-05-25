@@ -1,0 +1,36 @@
+{
+  "dequant_gemv_int4": {
+    "file": "tl_dequant_gemv_int4.hip",
+    "obj": null,
+    "desc": "INT4 dequantize GEMV (decode, M=1)",
+    "target": "hip",
+    "configs": [
+      {
+        "N": 4096,
+        "K": 4096
+      },
+      {
+        "N": 14336,
+        "K": 4096
+      },
+      {
+        "N": 4096,
+        "K": 14336
+      }
+    ]
+  },
+  "mla_decode": {
+    "file": "tl_mla_decode.hip",
+    "obj": null,
+    "desc": "DeepSeek MLA decode kernel",
+    "target": "hip",
+    "configs": [
+      {
+        "heads": 128,
+        "seqlen_kv": 4096,
+        "q_dim": 192,
+        "kv_dim": 512
+      }
+    ]
+  }
+}

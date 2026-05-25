@@ -1,0 +1,5 @@
+Hello, what is 2+3?
+What is the capital of France?
+Tell me a joke.
+What is 5*7?
+How are you?

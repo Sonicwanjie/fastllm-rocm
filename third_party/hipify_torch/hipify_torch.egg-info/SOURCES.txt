@@ -1,0 +1,13 @@
+LICENSE.txt
+README.md
+setup.py
+hipify_torch/__init__.py
+hipify_torch/constants.py
+hipify_torch/cuda_to_hip_mappings.py
+hipify_torch/hipify_python.py
+hipify_torch/version.py
+hipify_torch.egg-info/PKG-INFO
+hipify_torch.egg-info/SOURCES.txt
+hipify_torch.egg-info/dependency_links.txt
+hipify_torch.egg-info/top_level.txt
+test/test_installation.py
