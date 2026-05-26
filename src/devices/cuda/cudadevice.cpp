@@ -450,7 +450,6 @@ namespace fastllm {
 
     bool CudaRMSNormOp::CanRun(const std::string &opType, const fastllm::DataDict &datas,
                                const fastllm::FloatDict &floatParams, const fastllm::IntDict &intParams) {
-        return true;
     }
 
     void CudaRMSNormOp::Run(const std::string &opType, const fastllm::DataDict &datas,
@@ -472,7 +471,6 @@ namespace fastllm {
 
     bool CudaRMSNormPartOp::CanRun(const std::string &opType, const fastllm::DataDict &datas,
                                const fastllm::FloatDict &floatParams, const fastllm::IntDict &intParams) {
-        return true;
     }
 
     void CudaRMSNormPartOp::Run(const std::string &opType, const fastllm::DataDict &datas,
@@ -623,12 +621,21 @@ namespace fastllm {
         DoCudaLinearReshape(input, weight, output);
     }
 
+    static bool IsGGUFWeight(const fastllm::DataDict &datas) {
+        auto it = datas.find("weight");
+        if (it != datas.end() && it->second != nullptr) {
+            return it->second->dataType >= fastllm::DataType::DATA_GGUF_FORMAT &&
+                   it->second->dataType <= fastllm::DataType::DATA_GGUF_FORMAT_END;
+        }
+        return false;
+    }
+
     bool CudaLinearOp::CanRun(const std::string &opType, const fastllm::DataDict &datas,
                               const fastllm::FloatDict &floatParams, const fastllm::IntDict &intParams) {
         if (intParams.find("exType") != intParams.end()) {
             return false;
         }
-        return true;
+        return !IsGGUFWeight(datas);
     }
 
     void DoCudaLinear(Data &input, Data &weight, const Data &bias, Data &output) {
@@ -781,7 +788,7 @@ namespace fastllm {
 
     bool CudaLinearAddOp::CanRun(const std::string &opType, const fastllm::DataDict &datas,
                                  const fastllm::FloatDict &floatParams, const fastllm::IntDict &intParams) {
-        return true;
+        return !IsGGUFWeight(datas);
     }
 
     void CudaLinearAddOp::Run(const std::string &opType, const fastllm::DataDict &datas,
@@ -822,7 +829,7 @@ namespace fastllm {
 
     bool CudaLinearSwigluOp::CanRun(const std::string &opType, const fastllm::DataDict &datas,
                                     const fastllm::FloatDict &floatParams, const fastllm::IntDict &intParams) {
-        return true;
+        return !IsGGUFWeight(datas);
     }
 
     bool DoCudaLinearSwiglu(Data &input, Data &weight, const Data &bias, Data &middle, Data &output) {

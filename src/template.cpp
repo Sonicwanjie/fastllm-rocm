@@ -455,7 +455,22 @@ namespace fastllm {
         bool trimNext = false;
         for (int i = 0; i < temp.size(); i++) {
             if (temp[i] == '{' && i + 1 < temp.size() && (temp[i + 1] == '{' || temp[i + 1] == '%') ) {
-                size_t curEnd = temp[i + 1] == '%' ? temp.find("%}", i + 2) : temp.find("}}", i + 2);
+                // Find block end, skipping over string literals
+                char endChar1 = (temp[i + 1] == '%') ? '%' : '}';
+                size_t curEnd = std::string::npos;
+                {
+                    bool inStr = false; char strCh = 0;
+                    for (size_t j = i + 2; j + 1 < temp.size(); j++) {
+                        char c = temp[j];
+                        if (inStr) {
+                            if (c == '\\' && j + 1 < temp.size()) { j++; continue; }
+                            if (c == strCh) inStr = false;
+                        } else {
+                            if (c == '"' || c == '\'') { inStr = true; strCh = c; }
+                            else if (temp[j] == endChar1 && temp[j+1] == '}') { curEnd = j; break; }
+                        }
+                    }
+                }
                 AssertInFastLLM(curEnd != -1, 
                                 "Can't find blockend: " + temp.substr(i, std::min(10, (int)temp.size() - i)));
                 std::string part = temp.substr(pos, i - pos);
