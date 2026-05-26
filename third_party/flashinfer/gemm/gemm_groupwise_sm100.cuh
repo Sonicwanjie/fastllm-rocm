@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2025 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,10 +30,10 @@ using namespace cute;
 
 template <int ScaleGranularityM, int ScaleGranularityN, int ScaleGranularityK, bool ScaleMajorK,
           int MmaSM, typename DTypeIn, typename DTypeOut>
-cudaError_t CutlassGroupwiseScaledGEMMSM100(void* float_buffer, size_t float_buffer_size_in_bytes,
+hipError_t CutlassGroupwiseScaledGEMMSM100(void* float_buffer, size_t float_buffer_size_in_bytes,
                                             DTypeIn* A_ptr, DTypeIn* B_ptr, float* SFA_ptr,
                                             float* SFB_ptr, DTypeOut* C_ptr, int m, int n, int k,
-                                            int l, cudaStream_t stream) {
+                                            int l, hipStream_t stream) {
   using ElementA = DTypeIn;                   // Element type for A matrix operand
   using LayoutA = cutlass::layout::RowMajor;  // Layout type for A matrix operand
   constexpr int AlignmentA =
@@ -145,7 +145,7 @@ cudaError_t CutlassGroupwiseScaledGEMMSM100(void* float_buffer, size_t float_buf
   CUTLASS_CHECK(gemm.can_implement(arguments));
   CUTLASS_CHECK(gemm.initialize(arguments, workspace_ptr));
   CUTLASS_CHECK(gemm.run(stream));
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 }  // namespace gemm
@@ -153,3 +153,4 @@ cudaError_t CutlassGroupwiseScaledGEMMSM100(void* float_buffer, size_t float_buf
 }  // namespace flashinfer
 
 #endif  // FLASHINFER_GEMM_GROUPWISE_SM100_CUH_
+

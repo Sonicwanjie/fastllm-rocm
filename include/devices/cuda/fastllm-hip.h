@@ -6,35 +6,33 @@
 #include <hipblas/hipblas.h>
 #include <hip/hip_fp16.h>
 #include <hip/hip_bfloat16.h>
+#include <hip/hip_bf16.h>
+
+// __ldg compatibility - on AMD GPUs, regular loads are sufficient
+template<typename T>
+__device__ __forceinline__ T __ldg(const T* ptr) { return *ptr; }
+
+// Ensure rocwmma macros are defined before any rocwmma header is pulled in
+// (e.g. via hip_fp8.h -> rocwmma/internal/float8.hpp)
+#ifndef ROCWMMA_HOST_DEVICE
+#define ROCWMMA_HOST_DEVICE __host__ __device__
+#endif
+#ifndef ROCWMMA_HOST
+#define ROCWMMA_HOST __host__
+#endif
+#ifndef ROCWMMA_DEVICE
+#define ROCWMMA_DEVICE __device__
+#endif
 
 #if defined(USE_ROCM) && !defined(HIP_NO_TENSOR_CORE) // support tensor core
 #include <rocwmma/rocwmma.hpp>
 #endif
 
 // ========== Warp shuffle macros ==========
-// Shuffle macros: CUDA uses 4 args (mask, var, lane, width), HIP uses 3 (var, lane, width)
 // Use inline functions to handle both calling conventions
-static __device__ __forceinline__ float __shfl_sync_fn(unsigned mask, float var, int lane, int width=32) { return __shfl(var, lane, width); }
-static __device__ __forceinline__ int __shfl_sync_fn(unsigned mask, int var, int lane, int width=32) { return __shfl(var, lane, width); }
-static __device__ __forceinline__ unsigned __shfl_sync_fn(unsigned mask, unsigned var, int lane, int width=32) { return __shfl(var, lane, width); }
-static __device__ __forceinline__ half __shfl_sync_fn(unsigned mask, half var, int lane, int width=32) { return __shfl(var, lane, width); }
-#define __shfl_sync __shfl_sync_fn
 
-static __device__ __forceinline__ float __shfl_down_sync_fn(unsigned mask, float var, int delta, int width=32) { return __shfl_down(var, delta, width); }
-static __device__ __forceinline__ int __shfl_down_sync_fn(unsigned mask, int var, int delta, int width=32) { return __shfl_down(var, delta, width); }
-static __device__ __forceinline__ unsigned __shfl_down_sync_fn(unsigned mask, unsigned var, int delta, int width=32) { return __shfl_down(var, delta, width); }
-static __device__ __forceinline__ half __shfl_down_sync_fn(unsigned mask, half var, int delta, int width=32) { return __shfl_down(var, delta, width); }
-#define __shfl_down_sync __shfl_down_sync_fn
 
-static __device__ __forceinline__ float __shfl_up_sync_fn(unsigned mask, float var, int delta, int width=32) { return __shfl_up(var, delta, width); }
-static __device__ __forceinline__ int __shfl_up_sync_fn(unsigned mask, int var, int delta, int width=32) { return __shfl_up(var, delta, width); }
-#define __shfl_up_sync __shfl_up_sync_fn
 
-static __device__ __forceinline__ float __shfl_xor_sync_fn(unsigned mask, float var, int laneMask, int width=32) { return __shfl_xor(var, laneMask, width); }
-static __device__ __forceinline__ int __shfl_xor_sync_fn(unsigned mask, int var, int laneMask, int width=32) { return __shfl_xor(var, laneMask, width); }
-static __device__ __forceinline__ unsigned __shfl_xor_sync_fn(unsigned mask, unsigned var, int laneMask, int width=32) { return __shfl_xor(var, laneMask, width); }
-static __device__ __forceinline__ half2 __shfl_xor_sync_fn(unsigned mask, half2 var, int laneMask, int width=32) { return __shfl_xor(var, laneMask, width); }
-#define __shfl_xor_sync __shfl_xor_sync_fn
 
 // ========== SIMD intrinsics ==========
 typedef int8_t int8x4_t __attribute__((ext_vector_type(4)));
@@ -97,46 +95,42 @@ struct __nv_bfloat16 {
     __device__ __forceinline__ operator hip_bfloat16() const { hip_bfloat16 r; r.data = __x; return r; }
 };
 
-struct __nv_bfloat162 {
-    union {
-        uint32_t __x;
-        struct { uint16_t x; uint16_t y; };
-    };
-    __host__ __device__ __forceinline__ __nv_bfloat162() : __x(0) {}
-    __host__ __device__ __forceinline__ __nv_bfloat162(uint16_t lo, uint16_t hi) { x = lo; y = hi; }
-    __host__ __device__ __forceinline__ __nv_bfloat162(const __nv_bfloat16& lo, const __nv_bfloat16& hi) { x = lo.__x; y = hi.__x; }
-};
+// __nv_bfloat162: use __hip_bfloat162 from ROCm SDK
+// Provides x, y members (__hip_bfloat16 type) and full operator support
+using __nv_bfloat162 = __hip_bfloat162;
+
 
 // bfloat16 conversion helpers
-static __host__ __device__ __forceinline__ float _nvbf16_to_float(const __nv_bfloat16& v) {
-    hip_bfloat16 r; r.data = v.__x; return static_cast<float>(r);
+// __nv_bfloat16 has operator float() and operator hip_bfloat16() for implicit conversion
+// So HIP native __bfloat162float(hip_bfloat16) and __float2bfloat16(float) work via implicit conversion
+// But for explicit __nv_bfloat16 arguments, we provide these helpers:
+static __host__ __device__ __forceinline__ float __nvbf16_to_float_nv(const __nv_bfloat16& v) {
+    return static_cast<float>(v);
 }
-static __host__ __device__ __forceinline__ __nv_bfloat16 _float_to_nvbf16(float f) {
-    __nv_bfloat16 r; r.__x = hip_bfloat16(f).data; return r;
+static __host__ __device__ __forceinline__ __nv_bfloat16 __float2nvbf16(float f) {
+    return __nv_bfloat16(f);
 }
-#define __bfloat162float _nvbf16_to_float
-#define __float2bfloat16_rn _float_to_nvbf16
+// Override HIP bfloat16 functions to also accept __nv_bfloat16
+// (these are separate overloads, not macros, to avoid ambiguity)
 
-static __device__ __forceinline__ float2 __bfloat1622float2_impl(const __nv_bfloat162& v) {
+static __host__ __device__ __forceinline__ float2 __bfloat1622float2_impl(const __nv_bfloat162& v) {
     float2 r;
-    uint16_t lo = (uint16_t)(v.__x & 0xFFFF);
-    uint16_t hi = (uint16_t)(v.__x >> 16);
-    hip_bfloat16 a; a.data = lo;
-    hip_bfloat16 b; b.data = hi;
-    r.x = static_cast<float>(a);
-    r.y = static_cast<float>(b);
+    r.x = static_cast<float>(v.x);
+    r.y = static_cast<float>(v.y);
     return r;
 }
 #define __bfloat1622float2 __bfloat1622float2_impl
-
-// FP8 type aliases - needed by cuda/std type traits
-// These map CUDA FP8 types to HIP/ROCm equivalents
-#if defined(USE_ROCM)
+// FP8 type forward declarations
+// amd_hip_bf16.h has Clang-incompatible 'static' operators
+// Only include hip_fp8.h during actual device code generation (not host C++ compile)
+#if defined(__CUDA_ARCH__)
 #include <hip/hip_fp8.h>
-// hip_fp8.h defines __hip_fp8_e4m3 and __hip_fp8_e5m2
-// But cuda/std/__type_traits uses __nv_fp8_e4m3 / __nv_fp8_e5m2
 using __nv_fp8_e4m3 = __hip_fp8_e4m3;
 using __nv_fp8_e5m2 = __hip_fp8_e5m2;
+#else
+// Forward declare FP8 types for host/side compilation
+struct __nv_fp8_e4m3 { unsigned char __x; __host__ __device__ __nv_fp8_e4m3() : __x(0) {} __host__ __device__ __nv_fp8_e4m3(float) : __x(0) {} __host__ __device__ __nv_fp8_e4m3(int) : __x(0) {} __host__ __device__ operator float() const { return 0.f; } __host__ __device__ operator half() const { return __float2half(0.f); } __host__ __device__ operator __nv_bfloat16() const { return __nv_bfloat16(0.f); } };
+struct __nv_fp8_e5m2 { unsigned char __x; __host__ __device__ __nv_fp8_e5m2() : __x(0) {} __host__ __device__ __nv_fp8_e5m2(float) : __x(0) {} __host__ __device__ __nv_fp8_e5m2(int) : __x(0) {} __host__ __device__ operator float() const { return 0.f; } __host__ __device__ operator half() const { return __float2half(0.f); } __host__ __device__ operator __nv_bfloat16() const { return __nv_bfloat16(0.f); } };
 #endif
 
 // ========== Union types with guards ==========
@@ -165,6 +159,8 @@ typedef union __align__(16) _union_half_8 {
 } union_half8;
 
 // BF16 union types
+#ifndef _UNION_BF16_TYPES_DEFINED
+#define _UNION_BF16_TYPES_DEFINED
 typedef union __align__(16) _union_bf16_4 {
     uint2 in;
     __nv_bfloat16 out[4];
@@ -172,12 +168,15 @@ typedef union __align__(16) _union_bf16_4 {
     __device__ _union_bf16_4() {}
 } union_bf16_4;
 
+#ifndef _UNION_BF16_4_FP16_DEFINED
+#define _UNION_BF16_4_FP16_DEFINED
 typedef union __align__(16) _union_bf16_4_fp16 {
     uint2 in;
     __nv_bfloat16 out[4];
     __nv_bfloat162 out2[2];
     __device__ _union_bf16_4_fp16() {}
 } union_bf16_4_fp16;
+#endif // _UNION_BF16_4_FP16_DEFINED
 
 typedef union __align__(16) _union_bf16_8 {
     uint4 in;
@@ -185,6 +184,7 @@ typedef union __align__(16) _union_bf16_8 {
     __nv_bfloat162 out2[4];
     __device__ _union_bf16_8() {}
 } union_bf16_8;
+#endif // _UNION_BF16_TYPES_DEFINED
 
 // ========== hipblas wrappers ==========
 namespace fastllm_hip {
@@ -263,3 +263,10 @@ static __device__ __forceinline__ float __fmaf_ieee_rn_fn(float a, float b) {
 }
 
 #endif // __HIP_PLATFORM_AMD__
+
+
+
+
+
+
+

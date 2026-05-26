@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2022-2024, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -53,9 +53,9 @@ constexpr int RECV_FIFO_TOTAL_U64 = RECV_FIFO_TOTAL_BYTES / sizeof(uint64_t);
 static int getMultiProcessorCount() {
   int device_id;
   int multi_processor_count;
-  FLASHINFER_CUDA_CALL(cudaGetDevice(&device_id));
-  FLASHINFER_CUDA_CALL(
-      cudaDeviceGetAttribute(&multi_processor_count, cudaDevAttrMultiProcessorCount, device_id));
+  FLASHINFER_HIP_CALL(cudaGetDevice(&device_id));
+  FLASHINFER_HIP_CALL(
+      hipDeviceGetAttribute(&multi_processor_count, hipDeviceAttributeMultiprocessorCount, device_id));
   return multi_processor_count;
 }
 
@@ -521,7 +521,7 @@ __global__ void moeAllToAllKernel(MoeEpWorldInfo worldInfo, MoeCommWorkspace wor
 
 void moeAllToAll(MoeEpWorldInfo worldInfo, SendRecvDataInfo sendRecvDataInfo,
                  SendRecvDispls sendDispls, SendRecvDispls recvDispls, MoeCommWorkspace workspace,
-                 cudaStream_t stream) {
+                 hipStream_t stream) {
   sendRecvDataInfo.DoPreCompute();
   FLASHINFER_CHECK(reinterpret_cast<uintptr_t>(sendDispls.dataPtr) % 16 == 0,
                    "sendDispls.dataPtr must be 16-byte aligned");
@@ -606,7 +606,7 @@ __global__ void computeSendRecvRankCountKernel(MoeEpWorldInfo worldInfo,
 void computeSendRecvRankCount(const MoeEpWorldInfo& worldInfo,
                               MoeExpertParallelInfo expertParallelInfo, int maxTokenCountPerRank,
                               int const* realRankTokenCountCumSum, int const* gatheredTargetRankIds,
-                              int* sendRankCount, int* recvRankCount, cudaStream_t stream) {
+                              int* sendRankCount, int* recvRankCount, hipStream_t stream) {
   FLASHINFER_CHECK(expertParallelInfo.topK <= 32,
                    "Only topK less than or equal to 32 supported now.");
   int threadsPerBlock = 1024;
@@ -645,7 +645,7 @@ __global__ void inplaceSendRecvRankCumSumKernel(MoeEpWorldInfo worldInfo, int* s
 }
 
 void inplaceSendRecvRankCumSum(const MoeEpWorldInfo& worldInfo, int* sendRankCount,
-                               int* recvRankCount, cudaStream_t stream) {
+                               int* recvRankCount, hipStream_t stream) {
   int epSize = worldInfo.epSize;
   int epRank = worldInfo.epRank;
 
@@ -772,7 +772,7 @@ void computeSendRecvIndices(const MoeEpWorldInfo& worldInfo,
                             int const* sendRankCountCumSum, int const* recvRankCountCumSum,
                             int* localGatherIndices, int* sendRankLocalIndices,
                             int* recvRankLocalIndices, int* backwardRecvRankLocalIndices,
-                            cudaStream_t stream) {
+                            hipStream_t stream) {
   FLASHINFER_CHECK(expertParallelInfo.topK <= 32,
                    "Only topK less than or equal to 32 supported now.");
   int threadsPerBlock = 1024;
@@ -797,7 +797,7 @@ void computeSendRecvIndices(const MoeEpWorldInfo& worldInfo,
       sendRankLocalIndices, recvRankLocalIndices, backwardRecvRankLocalIndices);
 }
 
-cudaError_t moeAllToAllPrepareIndices(
+hipError_t moeAllToAllPrepareIndices(
     MoeEpWorldInfo worldInfo, MoeExpertParallelInfo expertParallelInfo, int maxTokenCountPerRank,
     int const* gatheredTargetRankIds, int const* realRankTokenCountCumSum,
     // indices of gatheredTargetRankIds that has the local rank in topK
@@ -815,23 +815,23 @@ cudaError_t moeAllToAllPrepareIndices(
                                         // expertParallelInfo.expertCount when current rank has
                                         // maxTokenCountPerRank tokens to send and all has
                                         // expertCount dest
-    cudaStream_t stream) {
+    hipStream_t stream) {
   FLASHINFER_CHECK(worldInfo.epSize <= 1024,
                    "Only worldInfo.epSize less than or equal to 1024 supported now.");
 
-  FLASHINFER_CUDA_CALL(
+  FLASHINFER_HIP_CALL(
       cudaMemsetAsync(sendRankCountCumSum, 0, sizeof(int) * worldInfo.epSize, stream));
-  FLASHINFER_CUDA_CALL(
+  FLASHINFER_HIP_CALL(
       cudaMemsetAsync(recvRankCountCumSum, 0, sizeof(int) * worldInfo.epSize, stream));
   int maxSendRanksPerToken = std::max(worldInfo.epSize, expertParallelInfo.topK);
 
-  FLASHINFER_CUDA_CALL(cudaMemsetAsync(
+  FLASHINFER_HIP_CALL(cudaMemsetAsync(
       localGatherIndices, -1, maxTokenCountPerRank * worldInfo.epSize * sizeof(int), stream));
-  FLASHINFER_CUDA_CALL(cudaMemsetAsync(
+  FLASHINFER_HIP_CALL(cudaMemsetAsync(
       sendRankLocalIndices, -1, maxTokenCountPerRank * maxSendRanksPerToken * sizeof(int), stream));
-  FLASHINFER_CUDA_CALL(cudaMemsetAsync(
+  FLASHINFER_HIP_CALL(cudaMemsetAsync(
       recvRankLocalIndices, -1, maxTokenCountPerRank * worldInfo.epSize * sizeof(int), stream));
-  FLASHINFER_CUDA_CALL(cudaMemsetAsync(backwardRecvRankLocalIndices, -1,
+  FLASHINFER_HIP_CALL(cudaMemsetAsync(backwardRecvRankLocalIndices, -1,
                                        maxTokenCountPerRank * maxSendRanksPerToken * sizeof(int),
                                        stream));
   computeSendRecvRankCount(worldInfo, expertParallelInfo, maxTokenCountPerRank,
@@ -843,7 +843,7 @@ cudaError_t moeAllToAllPrepareIndices(
                          realRankTokenCountCumSum, gatheredTargetRankIds, sendRankCountCumSum,
                          recvRankCountCumSum, localGatherIndices, sendRankLocalIndices,
                          recvRankLocalIndices, backwardRecvRankLocalIndices, stream);
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 template <int kThreadsGroupSize>
@@ -883,7 +883,7 @@ void moeLocalGather(MoeEpWorldInfo worldInfo, MoeExpertParallelInfo expertParall
                     int maxTokenCountPerRank, int localMaxTokenCount,
                     int const* recvRankCountCumSum, int const* localGatherIndices,
                     int const* gatheredExpertIds, float const* gatheredScales, int* localExpertIds,
-                    float* localScales, cudaStream_t stream) {
+                    float* localScales, hipStream_t stream) {
   FLASHINFER_CHECK(expertParallelInfo.topK <= 32,
                    "Only topK less than or equal to 32 supported now.");
   auto* kernelPtr = moeLocalGatherDevice<32>;
@@ -923,3 +923,5 @@ void setMaxUsableSmCount(int smCount) {
 
 }  // namespace trtllm_alltoall
 }  // namespace flashinfer
+
+

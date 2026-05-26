@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2023 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -471,7 +471,7 @@ __device__ __forceinline__ void write_o(typename KTraits::SharedStorage* smem_st
 #pragma unroll
   for (uint32_t k = 0; k < HEAD_DIM_CKV / 32; ++k) {
     uint32_t o_frag_f16[8 / 2];
-    vec_cast<DTypeO, float>::cast<8>((DTypeO*)o_frag_f16, &o_frag[k * 8]);
+    vec_cast<DTypeO, float>::template cast<8>((DTypeO*)o_frag_f16, &o_frag[k * 8]);
     uint32_t o_smem_offset_w = get_swizzle_offset<KTraits::SWIZZLE_MODE_O, UPCAST_STRIDE_FINAL_O>(
         warp_idx_in_wg * 16 + lane_idx % 16,
         warp_group_idx * NUM_MMA_D_CKV + k * 2 + lane_idx / 16);
@@ -566,7 +566,7 @@ template <typename KTraits>
 __device__ __forceinline__ void convert_s_to_p(float* s_frag, uint32_t* p_frag) {
 #pragma unroll
   for (uint32_t i = 0; i < KTraits::NUM_REGS_S_FRAG / 8; ++i) {
-    vec_cast<typename KTraits::DTypeKV, float>::cast<8>(
+    vec_cast<typename KTraits::DTypeKV, float>::template cast<8>(
         ((typename KTraits::DTypeKV*)p_frag) + i * 8, s_frag + i * 8);
   }
 }
@@ -965,8 +965,8 @@ __global__ __launch_bounds__(KTraits::NUM_THREADS) void BatchMLAPageAttentionHop
 }  // namespace hopper
 
 template <MaskMode MASK_MODE, uint32_t HEAD_DIM_CKV, uint32_t HEAD_DIM_KPE, typename Params>
-cudaError_t BatchMLAPageAttentionHopper(Params params, uint32_t num_blks_x, uint32_t num_blks_y,
-                                        cudaStream_t stream) {
+hipError_t BatchMLAPageAttentionHopper(Params params, uint32_t num_blks_x, uint32_t num_blks_y,
+                                        hipStream_t stream) {
   using DTypeQ = typename Params::DTypeQ;
   using DTypeKV = typename Params::DTypeKV;
   using DTypeO = typename Params::DTypeO;
@@ -981,7 +981,7 @@ cudaError_t BatchMLAPageAttentionHopper(Params params, uint32_t num_blks_x, uint
   int device;
   int smem_limit_per_sm;
   cudaGetDevice(&device);
-  cudaDeviceGetAttribute(&smem_limit_per_sm, cudaDevAttrMaxSharedMemoryPerMultiprocessor, device);
+  hipDeviceGetAttribute(&smem_limit_per_sm, hipDeviceAttributeMaxSharedMemoryPerMultiprocessor, device);
 
   constexpr uint32_t NUM_STAGES = 2;
   constexpr uint32_t CTA_TILE_Q = 64;
@@ -997,12 +997,12 @@ cudaError_t BatchMLAPageAttentionHopper(Params params, uint32_t num_blks_x, uint
   auto kernel = hopper::BatchMLAPageAttentionHopperKernel<KTraits, Params>;
   void* args[] = {(void*)&params};
 
-  FLASHINFER_CUDA_CALL(
-      cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size));
-  FLASHINFER_CUDA_CALL(
+  FLASHINFER_HIP_CALL(
+      hipFuncSetAttribute(kernel, hipFuncAttributeMaxDynamicSharedMemorySize, smem_size));
+  FLASHINFER_HIP_CALL(
       cudaLaunchCooperativeKernel((void*)kernel, nblks, nthrs, args, smem_size, stream));
 
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 }  // namespace mla
@@ -1010,3 +1010,6 @@ cudaError_t BatchMLAPageAttentionHopper(Params params, uint32_t num_blks_x, uint
 }  // namespace flashinfer
 
 #endif  // FLASHINFER_MLA_HOPPER_CUH_
+
+
+

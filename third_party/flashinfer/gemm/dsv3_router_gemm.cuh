@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2019-2023, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,8 +15,8 @@
  */
 
 #include <cuda.h>
-#include <cuda_bf16.h>
-#include <cuda_fp16.h>
+#include <hip/hip_bfloat16.h>
+#include <hip/hip_fp16.h>
 
 namespace flashinfer::trtllm_dsv3_router_gemm {
 // Custom FMA implementation using PTX assembly instructions
@@ -157,3 +157,4 @@ __global__ __launch_bounds__(128, 1) void router_gemm_kernel(float* out, T const
 #endif
 }
 }  // namespace flashinfer::trtllm_dsv3_router_gemm
+

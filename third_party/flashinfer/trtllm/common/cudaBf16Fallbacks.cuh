@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2019-2023, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,8 +16,8 @@
 
 #pragma once
 
-#include <cuda_fp16.h>
-#include <cuda_runtime_api.h>
+#include <hip/hip_fp16.h>
+#include <hip/hip_runtime_api.h>
 
 #include "flashinfer/trtllm/common/cudaBf16Wrapper.h"
 
@@ -290,3 +290,4 @@ inline __device__ __nv_bfloat162 operator+(const __nv_bfloat162 x, const __nv_bf
 #endif
 #endif
 }  // namespace
+

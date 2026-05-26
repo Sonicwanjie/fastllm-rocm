@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2025 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -83,10 +83,10 @@ using namespace cute;
 // SM120 uses Cooperative schedule with 128x128x128 tile shape
 template <int ScaleGranularityM, int ScaleGranularityN, int ScaleGranularityK, bool ScaleMajorK,
           typename DTypeIn, typename DTypeOut>
-cudaError_t CutlassFP8GroupwiseScaledGroupGEMMSM120(
+hipError_t CutlassFP8GroupwiseScaledGroupGEMMSM120(
     void* int_buffer, size_t int_buffer_size_in_bytes, void* float_buffer,
     size_t float_buffer_size_in_bytes, DTypeIn* A, DTypeIn* B, float* SFA, float* SFB, DTypeOut* D,
-    int* m_indptr, int max_m, int n, int k, int num_groups, cudaStream_t stream) {
+    int* m_indptr, int max_m, int n, int k, int num_groups, hipStream_t stream) {
   // SM120 only supports these specific scale granularities
   static_assert(ScaleGranularityM == 1 || ScaleGranularityM == 128,
                 "SM120 only supports ScaleGranularityM = 1 or 128");
@@ -210,7 +210,7 @@ cudaError_t CutlassFP8GroupwiseScaledGroupGEMMSM120(
                                             ProblemShape::UnderlyingProblemShape, StrideA, StrideB,
                                             StrideD, LayoutSFA, LayoutSFB, ScaleMajorK>;
 
-  FLASHINFER_CUDA_CALL(cudaLaunchKernelEx(
+  FLASHINFER_HIP_CALL(cudaLaunchKernelEx(
       &config, prepare_args_kernel, A, B, SFA, SFB, D, m_indptr, max_m, n, k, num_groups,
       ScaleGranularityM, ScaleGranularityN, ScaleGranularityK, problem_sizes, A_ptr, B_ptr, SFA_ptr,
       SFB_ptr, D_ptr, stride_A, stride_B, stride_D, layout_SFA, layout_SFB));
@@ -255,7 +255,7 @@ cudaError_t CutlassFP8GroupwiseScaledGroupGEMMSM120(
   CUTLASS_CHECK(gemm.can_implement(arguments));
   CUTLASS_CHECK(gemm.initialize(arguments, workspace_ptr));
   CUTLASS_CHECK(gemm.run(stream, /*cuda_adapter=*/nullptr, /*launch_with_pdl=*/true));
-  return cudaSuccess;
+  return hipSuccess;
 #else
   return cudaErrorNotSupported;
 #endif  // defined(CUTLASS_ARCH_MMA_SM120_SUPPORTED) || defined(CUTLASS_ARCH_MMA_SM121_SUPPORTED)
@@ -265,3 +265,4 @@ cudaError_t CutlassFP8GroupwiseScaledGroupGEMMSM120(
 }  // namespace flashinfer
 
 #endif  // FLASHINFER_GROUP_GEMM_FP8_GROUPWISE_SM120_CUH_
+

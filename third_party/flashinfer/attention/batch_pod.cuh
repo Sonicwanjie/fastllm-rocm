@@ -1,11 +1,11 @@
-#ifndef FLASHINFER_BATCH_POD_CUH_
+﻿#ifndef FLASHINFER_BATCH_POD_CUH_
 #define FLASHINFER_BATCH_POD_CUH_
 
 #include <cooperative_groups.h>
-#include <cuda_bf16.h>
-#include <cuda_fp16.h>
-#include <cuda_fp8.h>
-#include <cuda_runtime.h>
+#include <hip/hip_bfloat16.h>
+#include <hip/hip_fp16.h>
+#include <hip/hip_fp8.h>
+#include <hip/hip_runtime.h>
 
 #include "../cp_async.cuh"
 #include "../fastdiv.cuh"
@@ -162,12 +162,12 @@ template <uint32_t HEAD_DIM_QK, uint32_t HEAD_DIM_VO, PosEncodingMode POS_ENCODI
           bool USE_FP16_QK_REDUCTION, uint32_t CTA_TILE_Q_P, MaskMode MASK_MODE_P,
           uint32_t CTA_TILE_Q_D, MaskMode MASK_MODE_D, typename PrefillAttentionVariant,
           typename DecodeAttentionVariant, typename PrefillParams, typename DecodeParams>
-cudaError_t BatchPODWithKVCacheTensorDispatched(PrefillParams prefill_params,
+hipError_t BatchPODWithKVCacheTensorDispatched(PrefillParams prefill_params,
                                                 typename PrefillParams::DTypeO* tmp_v_p,
                                                 float* tmp_s_p, DecodeParams decode_params,
                                                 typename DecodeParams::DTypeO* tmp_v_d,
                                                 float* tmp_s_d, bool enable_pdl,
-                                                cudaStream_t stream, int* sm_aware_sched) {
+                                                hipStream_t stream, int* sm_aware_sched) {
   static_assert(std::is_same<typename PrefillParams::DTypeQ, typename DecodeParams::DTypeQ>::value);
   static_assert(
       std::is_same<typename PrefillParams::DTypeKV, typename DecodeParams::DTypeKV>::value);
@@ -180,10 +180,10 @@ cudaError_t BatchPODWithKVCacheTensorDispatched(PrefillParams prefill_params,
   const uint32_t num_kv_heads = prefill_params.paged_kv.num_heads;
 
   int dev_id = 0;
-  FLASHINFER_CUDA_CALL(cudaGetDevice(&dev_id));
+  FLASHINFER_HIP_CALL(cudaGetDevice(&dev_id));
   int max_smem_per_sm = 0;
-  FLASHINFER_CUDA_CALL(cudaDeviceGetAttribute(&max_smem_per_sm,
-                                              cudaDevAttrMaxSharedMemoryPerMultiprocessor, dev_id));
+  FLASHINFER_HIP_CALL(hipDeviceGetAttribute(&max_smem_per_sm,
+                                              hipDeviceAttributeMaxSharedMemoryPerMultiprocessor, dev_id));
 
   // Prefill variable setup
   using DTypeQ_P = typename PrefillParams::DTypeQ;
@@ -327,15 +327,15 @@ cudaError_t BatchPODWithKVCacheTensorDispatched(PrefillParams prefill_params,
           //  ************************************************ /
 
           int num_sm = 0;
-          FLASHINFER_CUDA_CALL(
-              cudaDeviceGetAttribute(&num_sm, cudaDevAttrMultiProcessorCount, dev_id));
-          FLASHINFER_CUDA_CALL(
+          FLASHINFER_HIP_CALL(
+              hipDeviceGetAttribute(&num_sm, hipDeviceAttributeMultiprocessorCount, dev_id));
+          FLASHINFER_HIP_CALL(
               cudaMemsetAsync(sm_aware_sched, 0, sizeof(int) * (num_sm + 2), stream));
 
           // Setup kernel arguments
           void* args[] = {(void*)&prefill_params, (void*)&decode_params, (void*)&sm_aware_sched};
-          FLASHINFER_CUDA_CALL(
-              cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size));
+          FLASHINFER_HIP_CALL(
+              hipFuncSetAttribute(kernel, hipFuncAttributeMaxDynamicSharedMemorySize, smem_size));
 
           // Launch kernel
           if (enable_pdl) {
@@ -349,22 +349,22 @@ cudaError_t BatchPODWithKVCacheTensorDispatched(PrefillParams prefill_params,
             config.blockDim = nthrs;
             config.dynamicSmemBytes = smem_size;
             config.stream = stream;
-            FLASHINFER_CUDA_CALL(
+            FLASHINFER_HIP_CALL(
                 cudaLaunchKernelEx(&config, kernel, prefill_params, decode_params, sm_aware_sched));
           } else {
-            FLASHINFER_CUDA_CALL(
+            FLASHINFER_HIP_CALL(
                 cudaLaunchKernel((void*)kernel, nblks, nthrs, args, smem_size, stream));
           }
 
           // Post-kernel stuff for split-kv prefill
           if (tmp_v_p != nullptr) {
             if constexpr (PrefillAttentionVariant::use_softmax) {
-              FLASHINFER_CUDA_CALL(VariableLengthMergeStates(
+              FLASHINFER_HIP_CALL(VariableLengthMergeStates(
                   tmp_v_p, tmp_s_p, prefill_params.merge_indptr, o_p, lse_p,
                   prefill_params.max_total_num_rows, prefill_params.total_num_rows, num_qo_heads,
                   HEAD_DIM_VO, enable_pdl, stream));
             } else {
-              FLASHINFER_CUDA_CALL(VariableLengthAttentionSum(
+              FLASHINFER_HIP_CALL(VariableLengthAttentionSum(
                   tmp_v_p, prefill_params.merge_indptr, o_p, prefill_params.max_total_num_rows,
                   prefill_params.total_num_rows, num_qo_heads, HEAD_DIM_VO, enable_pdl, stream));
             }
@@ -372,12 +372,12 @@ cudaError_t BatchPODWithKVCacheTensorDispatched(PrefillParams prefill_params,
           // Post-kernel stuff for split-kv decode
           if (tmp_v_d != nullptr) {
             if constexpr (DecodeAttentionVariant::use_softmax) {
-              FLASHINFER_CUDA_CALL(VariableLengthMergeStates(
+              FLASHINFER_HIP_CALL(VariableLengthMergeStates(
                   tmp_v_d, tmp_s_d, decode_params.merge_indptr, o_d, lse_d,
                   decode_params.max_total_num_rows, decode_params.total_num_rows, num_qo_heads,
                   HEAD_DIM_VO, enable_pdl, stream));
             } else {
-              FLASHINFER_CUDA_CALL(VariableLengthAttentionSum(
+              FLASHINFER_HIP_CALL(VariableLengthAttentionSum(
                   tmp_v_d, decode_params.merge_indptr, o_d, decode_params.max_total_num_rows,
                   decode_params.total_num_rows, num_qo_heads, HEAD_DIM_VO, enable_pdl, stream));
             }
@@ -386,9 +386,13 @@ cudaError_t BatchPODWithKVCacheTensorDispatched(PrefillParams prefill_params,
       });
     }
   });
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 }  // namespace flashinfer
 
 #endif  // FLASHINFER_BATCH_POD_CUH_
+
+
+
+

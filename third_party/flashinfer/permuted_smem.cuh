@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2023 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,9 +16,9 @@
 #ifndef FLASHINFER_PERMUTED_SMEM_CUH_
 #define FLASHINFER_PERMUTED_SMEM_CUH_
 
-#include <cuda_bf16.h>
-#include <cuda_fp16.h>
-#include <cuda_runtime.h>
+#include <hip/hip_bfloat16.h>
+#include <hip/hip_fp16.h>
+#include <hip/hip_runtime.h>
 
 #include <cuda/pipeline>
 
@@ -182,3 +182,4 @@ struct smem_t {
 }  // namespace flashinfer
 
 #endif  // FLASHINFER_PERMUTED_SMEM_CUH_
+

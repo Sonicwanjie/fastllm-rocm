@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2022-2024, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,9 +15,9 @@
  */
 
 #include <cooperative_groups.h>
-#include <cuda_bf16.h>
-#include <cuda_fp16.h>
-#include <cuda_pipeline.h>
+#include <hip/hip_bfloat16.h>
+#include <hip/hip_fp16.h>
+// #include <cuda_pipeline.h>  // Not needed on HIP
 
 #include <iostream>
 
@@ -41,7 +41,7 @@ struct AllReduceParams {
 
   void* input;
   void* output;
-  cudaStream_t stream;
+  hipStream_t stream;
 };
 
 template <typename T>
@@ -55,7 +55,7 @@ struct RMSNormParams {
   uint32_t* buffer_flags;
   int batch;
   int hidden_dim;
-  cudaStream_t stream;
+  hipStream_t stream;
   bool launch_with_pdl;
 };
 
@@ -267,7 +267,7 @@ __global__ void twoshot_allreduce_kernel(T* output_ptr, T* shard_ptr, T** input_
 
 // Template-based dispatch functions following the same pattern as trtllm_allreduce.cuh
 template <typename T, int WORLD_SIZE>
-cudaError_t twoshot_allreduce_dispatch(AllReduceParams<T>& params) {
+hipError_t twoshot_allreduce_dispatch(AllReduceParams<T>& params) {
   int const num_threads = 128;
   int const num_blocks = (params.token_dim + num_threads - 1) / num_threads;
 
@@ -291,11 +291,11 @@ cudaError_t twoshot_allreduce_dispatch(AllReduceParams<T>& params) {
                      params.token_dim, params.rank,
                      reinterpret_cast<uint32_t*>(params.buffer_flags), params.wait_for_results);
 
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 template <typename T>
-cudaError_t twoshot_allreduce_dispatch_world_size(AllReduceParams<T>& params) {
+hipError_t twoshot_allreduce_dispatch_world_size(AllReduceParams<T>& params) {
   FLASHINFER_LOG_DEBUG("twoshot_allreduce_dispatch_world_size");
   switch (params.nranks) {
     case 2:
@@ -617,7 +617,7 @@ __global__ void __launch_bounds__(128, 1)
 }
 
 template <typename T, int H_DIM>
-cudaError_t twoshot_rmsnorm_dispatch(RMSNormParams<T>& params) {
+hipError_t twoshot_rmsnorm_dispatch(RMSNormParams<T>& params) {
   static constexpr int NUM_THREADS = 128;
   static constexpr int CGA_THREADS = NUM_THREADS;
   constexpr int iters = H_DIM / CGA_THREADS;
@@ -637,8 +637,8 @@ cudaError_t twoshot_rmsnorm_dispatch(RMSNormParams<T>& params) {
   size_t shmem_size = 3 * NUM_THREADS * iters * sizeof(T);
   config.dynamicSmemBytes = shmem_size;
 
-  cudaFuncSetAttribute(&RMSNorm<H_DIM, NUM_THREADS, 1, T, T>,
-                       cudaFuncAttributeMaxDynamicSharedMemorySize, shmem_size);
+  hipFuncSetAttribute(&RMSNorm<H_DIM, NUM_THREADS, 1, T, T>,
+                       hipFuncAttributeMaxDynamicSharedMemorySize, shmem_size);
 
   cudaLaunchKernelEx(
       &config, &RMSNorm<H_DIM, NUM_THREADS, 1, T, T>, reinterpret_cast<T*>(params.residual_output),
@@ -646,11 +646,11 @@ cudaError_t twoshot_rmsnorm_dispatch(RMSNormParams<T>& params) {
       reinterpret_cast<T const*>(params.gamma), static_cast<float>(params.epsilon),
       reinterpret_cast<T const*>(params.residual), params.batch, params.buffer_flags);
 
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 template <typename T>
-cudaError_t twoshot_rmsnorm_dispatch_hidden_dim(RMSNormParams<T>& params) {
+hipError_t twoshot_rmsnorm_dispatch_hidden_dim(RMSNormParams<T>& params) {
   FLASHINFER_LOG_DEBUG("twoshot_rmsnorm_dispatch_hidden_dim");
   switch (params.hidden_dim) {
     case 2048:
@@ -673,3 +673,6 @@ cudaError_t twoshot_rmsnorm_dispatch_hidden_dim(RMSNormParams<T>& params) {
 
 }  // namespace trtllm_mnnvl_allreduce
 }  // namespace flashinfer
+
+
+

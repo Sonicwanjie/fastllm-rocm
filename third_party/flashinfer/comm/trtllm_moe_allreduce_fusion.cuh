@@ -1,10 +1,10 @@
-#include <cooperative_groups.h>
+﻿#include <cooperative_groups.h>
 #include <cuda.h>
-#include <cuda_bf16.h>
-#include <cuda_fp16.h>
+#include <hip/hip_bfloat16.h>
+#include <hip/hip_fp16.h>
 
 #if CUDA_VERSION >= 12080
-#include <cuda_fp4.h>
+// #include <cuda_fp4.h>  // FP4 not supported on HIP
 #endif
 
 #include <cuda/std/optional>
@@ -672,7 +672,7 @@ struct AllReduceFusionParams {
   // todo(review): why float* scale_factor in trt-llm?
   float scale_factor;
   QuantizationSFLayout layout = QuantizationSFLayout::SWIZZLED_128x4;
-  cudaStream_t stream;
+  hipStream_t stream;
 
   // moe-allreduce output (non-fused)
   // might be used in MoeReductionAllReduceFusionParams
@@ -917,9 +917,9 @@ int get_sm_count() {
   if (sm_count == 0) {
     int device_id;
     auto status = cudaGetDevice(&device_id);
-    FLASHINFER_CHECK(status == cudaSuccess, "cudaGetDevice failed with error code " +
-                                                std::string(cudaGetErrorString(status)));
-    cudaDeviceGetAttribute(&sm_count, cudaDevAttrMultiProcessorCount, device_id);
+    FLASHINFER_CHECK(status == hipSuccess, "cudaGetDevice failed with error code " +
+                                                std::string(hipGetErrorString(status)));
+    hipDeviceGetAttribute(&sm_count, hipDeviceAttributeMultiprocessorCount, device_id);
   }
   return sm_count;
 }
@@ -1080,18 +1080,18 @@ __global__ void moereduce_allreduce_fusion_kernel_oneshot_lamport(
 }
 
 template <typename T, int NRanks, bool AllReduceOut, bool ResidualOut, bool NormOut, bool QuantOut>
-cudaError_t launch_oneshot_moereduce_lamport(MoeReductionAllReduceFusionParams<T> const& params,
+hipError_t launch_oneshot_moereduce_lamport(MoeReductionAllReduceFusionParams<T> const& params,
                                              cudaLaunchConfig_t& cfg) {
-  FLASHINFER_CUDA_CALL(cudaLaunchKernelEx(
+  FLASHINFER_HIP_CALL(cudaLaunchKernelEx(
       &cfg,
       moereduce_allreduce_fusion_kernel_oneshot_lamport<T, NRanks, AllReduceOut, ResidualOut,
                                                         NormOut, QuantOut>,
       params));
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 template <typename T, int NRanks, bool AllReduceOut, bool ResidualOut, bool NormOut, bool QuantOut>
-cudaError_t moereduction_allreduce_fusion_kernel_launcher(
+hipError_t moereduction_allreduce_fusion_kernel_launcher(
     MoeReductionAllReduceFusionParams<T> const& params, bool launch_with_pdl) {
   int token_num = params.size / params.hidden_dim;
   bool oneshot = use_oneshot(token_num);
@@ -1134,15 +1134,15 @@ cudaError_t moereduction_allreduce_fusion_kernel_launcher(
   cfg.attrs = attribute;
   cfg.numAttrs = 2;
   if (oneshot) {
-    FLASHINFER_CUDA_CALL(
+    FLASHINFER_HIP_CALL(
         (launch_oneshot_moereduce_lamport<T, NRanks, AllReduceOut, ResidualOut, NormOut, QuantOut>(
             params, cfg)));
   }
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 #define DISPATCH_BOOL_(expr, const_expr, ...) \
-  [&]() -> cudaError_t {                      \
+  [&]() -> hipError_t {                      \
     if (expr) {                               \
       constexpr bool const_expr = true;       \
       return __VA_ARGS__();                   \
@@ -1156,17 +1156,17 @@ cudaError_t moereduction_allreduce_fusion_kernel_launcher(
                                     QUANT, ...)                                                  \
   case n_ranks_val: {                                                                            \
     constexpr int N_RANKS_VAR = n_ranks_val;                                                     \
-    return DISPATCH_BOOL_(ar, AR, [&]() -> cudaError_t {                                         \
-      return DISPATCH_BOOL_(res, RES, [&]() -> cudaError_t {                                     \
-        return DISPATCH_BOOL_(rms, RMS, [&]() -> cudaError_t {                                   \
-          return DISPATCH_BOOL_(quant, QUANT, [&]() -> cudaError_t { return __VA_ARGS__(); });   \
+    return DISPATCH_BOOL_(ar, AR, [&]() -> hipError_t {                                         \
+      return DISPATCH_BOOL_(res, RES, [&]() -> hipError_t {                                     \
+        return DISPATCH_BOOL_(rms, RMS, [&]() -> hipError_t {                                   \
+          return DISPATCH_BOOL_(quant, QUANT, [&]() -> hipError_t { return __VA_ARGS__(); });   \
         });                                                                                      \
       });                                                                                        \
     });                                                                                          \
   }
 
 #define DISPATCH_MOEREDUCTION(n_ranks, ar, res, rms, quant, N_RANKS, AR, RES, RMS, QUANT, ...) \
-  [&]() -> cudaError_t {                                                                       \
+  [&]() -> hipError_t {                                                                       \
     switch (n_ranks) {                                                                         \
       _DISPATCH_MOEREDUCTION_CASE(2, N_RANKS, ar, res, rms, quant, AR, RES, RMS, QUANT,        \
                                   __VA_ARGS__)                                                 \
@@ -1183,7 +1183,7 @@ cudaError_t moereduction_allreduce_fusion_kernel_launcher(
   }()
 
 template <typename T>
-cudaError_t moereduction_allreduce_fusion_op(MoeReductionAllReduceFusionParams<T> const& params,
+hipError_t moereduction_allreduce_fusion_op(MoeReductionAllReduceFusionParams<T> const& params,
                                              bool launch_with_pdl) {
   FLASHINFER_CHECK(params.residual_in && params.rms_gamma, "residual_in and rms_gamma must be set");
   FLASHINFER_CHECK(params.moe_reduction_scale_input &&
@@ -1218,8 +1218,8 @@ cudaError_t moereduction_allreduce_fusion_op(MoeReductionAllReduceFusionParams<T
 
   auto status = DISPATCH_MOEREDUCTION(
       params.nranks, params.moe_allreduce_out, params.residual_out, params.rms_gamma,
-      params.quant_out, N_RANKS, AR, RES, RMS, QUANT, [&]() -> cudaError_t {
-        FLASHINFER_CUDA_CALL(
+      params.quant_out, N_RANKS, AR, RES, RMS, QUANT, [&]() -> hipError_t {
+        FLASHINFER_HIP_CALL(
             (moereduction_allreduce_fusion_kernel_launcher<T, N_RANKS, AR, RES, RMS, QUANT>(
                 (params), (launch_with_pdl))));
       });
@@ -1375,19 +1375,19 @@ __global__ void moefinalize_allreduce_fusion_kernel_oneshot_lamport(
 
 template <typename T, int NRanks, bool ResidualOut, bool NormOut, bool QuantOut,
           typename ScaleType = T>
-cudaError_t launch_oneshot_moefinalize_lamport(MoeFinalizeAllReduceFusionParams<T> const& params,
+hipError_t launch_oneshot_moefinalize_lamport(MoeFinalizeAllReduceFusionParams<T> const& params,
                                                cudaLaunchConfig_t& cfg) {
-  FLASHINFER_CUDA_CALL(cudaLaunchKernelEx(
+  FLASHINFER_HIP_CALL(cudaLaunchKernelEx(
       &cfg,
       moefinalize_allreduce_fusion_kernel_oneshot_lamport<T, NRanks, ResidualOut, NormOut, QuantOut,
                                                           ScaleType>,
       params));
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 template <typename T, int NRanks, bool ResidualOut, bool NormOut, bool QuantOut,
           typename ScaleType = T>
-cudaError_t moefinalize_allreduce_fusion_kernel_launcher(
+hipError_t moefinalize_allreduce_fusion_kernel_launcher(
     MoeFinalizeAllReduceFusionParams<T> const& params, bool launch_with_pdl) {
   int token_num = params.size / params.hidden_dim;
   bool oneshot = use_oneshot(token_num);
@@ -1431,26 +1431,26 @@ cudaError_t moefinalize_allreduce_fusion_kernel_launcher(
   cfg.attrs = attribute;
   cfg.numAttrs = 2;
   if (oneshot) {
-    FLASHINFER_CUDA_CALL(
+    FLASHINFER_HIP_CALL(
         (launch_oneshot_moefinalize_lamport<T, NRanks, ResidualOut, NormOut, QuantOut, ScaleType>(
             params, cfg)));
   }
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 #define _DISPATCH_MOEFINALIZEREDUCTION_CASE(n_ranks_val, N_RANKS_VAR, res, rms, quant, RES, RMS, \
                                             QUANT, ...)                                          \
   case n_ranks_val: {                                                                            \
     constexpr int N_RANKS_VAR = n_ranks_val;                                                     \
-    return DISPATCH_BOOL_(res, RES, [&]() -> cudaError_t {                                       \
-      return DISPATCH_BOOL_(rms, RMS, [&]() -> cudaError_t {                                     \
-        return DISPATCH_BOOL_(quant, QUANT, [&]() -> cudaError_t { return __VA_ARGS__(); });     \
+    return DISPATCH_BOOL_(res, RES, [&]() -> hipError_t {                                       \
+      return DISPATCH_BOOL_(rms, RMS, [&]() -> hipError_t {                                     \
+        return DISPATCH_BOOL_(quant, QUANT, [&]() -> hipError_t { return __VA_ARGS__(); });     \
       });                                                                                        \
     });                                                                                          \
   }
 
 #define DISPATCH_MOEFINALIZEREDUCTION(n_ranks, res, rms, quant, N_RANKS, RES, RMS, QUANT, ...) \
-  [&]() -> cudaError_t {                                                                       \
+  [&]() -> hipError_t {                                                                       \
     switch (n_ranks) {                                                                         \
       _DISPATCH_MOEFINALIZEREDUCTION_CASE(2, N_RANKS, res, rms, quant, RES, RMS, QUANT,        \
                                           __VA_ARGS__)                                         \
@@ -1467,7 +1467,7 @@ cudaError_t moefinalize_allreduce_fusion_kernel_launcher(
   }()
 
 template <typename T>
-cudaError_t moefinalize_allreduce_fusion_op(MoeFinalizeAllReduceFusionParams<T> const& params,
+hipError_t moefinalize_allreduce_fusion_op(MoeFinalizeAllReduceFusionParams<T> const& params,
                                             bool launch_with_pdl) {
   static constexpr int VEC_SIZE = details::kBytesPerAccess / sizeof(T);
   FLASHINFER_CHECK(params.allreduce_in && params.expanded_idx_to_permuted_idx && params.top_k,
@@ -1477,14 +1477,14 @@ cudaError_t moefinalize_allreduce_fusion_op(MoeFinalizeAllReduceFusionParams<T> 
 
   auto status = DISPATCH_MOEFINALIZEREDUCTION(
       params.nranks, params.residual_out, params.rms_gamma, params.quant_out, N_RANKS, RES, RMS,
-      QUANT, [&]() -> cudaError_t {
+      QUANT, [&]() -> hipError_t {
         if constexpr (CUDA_VERSION < 12080 && QUANT) {
           FLASHINFER_CHECK(false,
                            "cuda version should be greater equal than 12.8 with "
                            "trtllm_moe_allreduce_fusion quant");
           return cudaErrorNotSupported;
         }
-        FLASHINFER_CUDA_CALL(
+        FLASHINFER_HIP_CALL(
             (moefinalize_allreduce_fusion_kernel_launcher<T, N_RANKS, RES, RMS, QUANT>(
                 (params), (launch_with_pdl))));
       });
@@ -1492,3 +1492,6 @@ cudaError_t moefinalize_allreduce_fusion_op(MoeFinalizeAllReduceFusionParams<T> 
 }
 }  // namespace trtllm_moe_allreduce_fusion
 }  // namespace flashinfer
+
+
+

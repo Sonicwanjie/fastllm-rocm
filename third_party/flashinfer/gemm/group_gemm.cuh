@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2024 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -44,16 +44,16 @@ namespace group_gemm {
   }
 
 template <typename DType>
-cudaError_t CutlassSegmentGEMMRun(void* workspace_buffer, size_t workspace_buffer_size_in_bytes,
+hipError_t CutlassSegmentGEMMRun(void* workspace_buffer, size_t workspace_buffer_size_in_bytes,
                                   void* all_problems, int64_t batch_size, void* x, void* w, void* y,
                                   void* x_ld, void* w_ld, void* y_ld, bool weight_column_major,
-                                  cudaStream_t stream) {
+                                  hipStream_t stream) {
   using cutlass::epilogue::thread::LinearCombination;
   using cutlass::gemm::threadblock::GemmIdentityThreadblockSwizzle;
   int device;
   int smem_limit_per_sm;
   cudaGetDevice(&device);
-  cudaDeviceGetAttribute(&smem_limit_per_sm, cudaDevAttrMaxSharedMemoryPerMultiprocessor, device);
+  hipDeviceGetAttribute(&smem_limit_per_sm, hipDeviceAttributeMaxSharedMemoryPerMultiprocessor, device);
 
   DISPATCH_WEIGHT_LAYOUT(weight_column_major, WEIGHT_LAYOUT, {
     DISPATCH_SMEM_CONFIG(smem_limit_per_sm, NUM_STAGES, {
@@ -105,7 +105,7 @@ cudaError_t CutlassSegmentGEMMRun(void* workspace_buffer, size_t workspace_buffe
     });
   });
 
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 }  // namespace group_gemm
@@ -113,3 +113,6 @@ cudaError_t CutlassSegmentGEMMRun(void* workspace_buffer, size_t workspace_buffe
 }  // namespace flashinfer
 
 #endif  // FLASHINFER_GEMM_GROUP_GEMM_CUH_
+
+
+

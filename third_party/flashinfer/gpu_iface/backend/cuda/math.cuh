@@ -1,11 +1,11 @@
-// SPDX-FileCopyrightText: 2023-2025 FlashInfer team.
+﻿// SPDX-FileCopyrightText: 2023-2025 FlashInfer team.
 // SPDX-FileCopyrightText: 2025 Advanced Micro Devices, Inc.
 // SPDX-License-Identifier: Apache-2.0
 #ifndef FLASHINFER_MATH_CUH_
 #define FLASHINFER_MATH_CUH_
 
-#include <cuda_fp16.h>
-#include <cuda_runtime.h>
+#include <hip/hip_fp16.h>
+#include <hip/hip_runtime.h>
 
 #include <cstdint>
 
@@ -145,3 +145,4 @@ __forceinline__ __device__ half tanh(half x) {
 }  // namespace math
 }  // namespace flashinfer
 #endif  // FLASHINFER_MATH_CUH_
+

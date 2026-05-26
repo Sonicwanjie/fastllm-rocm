@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2025 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -144,11 +144,11 @@ __global__ void plan_kernel(int* qo_segment_offsets, int* kv_segment_offsets, in
 #endif
 }
 
-cudaError_t plan_kernel_wrapper(int* qo_segment_offsets, int* kv_segment_offsets, int* qo_lens,
+hipError_t plan_kernel_wrapper(int* qo_segment_offsets, int* kv_segment_offsets, int* qo_lens,
                                 int* kv_lens, int* work_indptr, int* qo_tile_indices,
                                 int* head_indices, int* batch_indices, int qo_tile_size,
                                 int batch_size, int num_heads, int num_buckets, bool causal,
-                                bool enable_pdl, cudaStream_t stream) {
+                                bool enable_pdl, hipStream_t stream) {
   if (enable_pdl) {
     cudaLaunchConfig_t config;
     config.gridDim = 1;
@@ -160,7 +160,7 @@ cudaError_t plan_kernel_wrapper(int* qo_segment_offsets, int* kv_segment_offsets
     attrs[0].val.programmaticStreamSerializationAllowed = true;
     config.numAttrs = 1;
     config.attrs = attrs;
-    FLASHINFER_CUDA_CALL(
+    FLASHINFER_HIP_CALL(
         cudaLaunchKernelEx(&config, plan_kernel, qo_segment_offsets, kv_segment_offsets, qo_lens,
                            kv_lens, work_indptr, qo_tile_indices, head_indices, batch_indices,
                            qo_tile_size, batch_size, num_heads, num_buckets, causal));
@@ -168,9 +168,10 @@ cudaError_t plan_kernel_wrapper(int* qo_segment_offsets, int* kv_segment_offsets
     plan_kernel<<<1, 256, 0, stream>>>(qo_segment_offsets, kv_segment_offsets, qo_lens, kv_lens,
                                        work_indptr, qo_tile_indices, head_indices, batch_indices,
                                        qo_tile_size, batch_size, num_heads, num_buckets, causal);
-    FLASHINFER_CUDA_CALL(cudaGetLastError());
+    FLASHINFER_HIP_CALL(hipGetLastError());
   }
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 }  // namespace flashinfer
+

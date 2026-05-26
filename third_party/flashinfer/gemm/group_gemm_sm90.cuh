@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2024 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -49,11 +49,11 @@ using namespace cute;
   }
 
 template <typename DTypeIn, typename DTypeOut>
-cudaError_t CutlassSegmentGEMMSM90Run(void* float_buffer, size_t float_buffer_size_in_bytes,
+hipError_t CutlassSegmentGEMMSM90Run(void* float_buffer, size_t float_buffer_size_in_bytes,
                                       void* int_buffer, size_t int_buffer_size_in_bytes,
                                       void* all_problems, int64_t batch_size, void* x, void* w,
                                       void* y, void* x_stride, void* w_stride, void* y_stride,
-                                      bool weight_column_major, cudaStream_t stream) {
+                                      bool weight_column_major, hipStream_t stream) {
   auto compute_capacity = GetCudaComputeCapability();
   if (compute_capacity.first < 9) {
     std::cerr << "CutlassSegmentGEMMSM90Run requires compute capability of at least 9.0"
@@ -151,10 +151,11 @@ cudaError_t CutlassSegmentGEMMSM90Run(void* float_buffer, size_t float_buffer_si
     }
   });
 
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 }  // namespace group_gemm
 }  // namespace flashinfer
 
 #endif  // FLASHINFER_GEMM_GROUP_GEMM_SM90_CUH_
+

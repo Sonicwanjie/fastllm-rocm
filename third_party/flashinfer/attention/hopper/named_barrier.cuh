@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2024, Jay Shah, Ganesh Bikshandi, Ying Zhang, Vijay Thakkar, Pradeep Ramani, Tri
  * Dao. Licensed under the BSD 3-Clause.
  *
@@ -7,7 +7,7 @@
 #ifndef FLASHINFER_ATTENTION_HOPPER_NAMED_BARRIERS_CUH_
 #define FLASHINFER_ATTENTION_HOPPER_NAMED_BARRIERS_CUH_
 
-#include <cuda_runtime.h>
+#include <hip/hip_runtime.h>
 
 #include "cutlass/arch/barrier.h"
 #include "cutlass/cutlass.h"
@@ -111,3 +111,4 @@ struct WarpScheduler {
 }  // namespace flashinfer
 
 #endif  // FLASHINFER_ATTENTION_HOPPER_NAMED_BARRIERS_CUH_
+

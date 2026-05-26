@@ -1,11 +1,11 @@
-// flashinfer: adapted from sglang + vllm code
+﻿// flashinfer: adapted from sglang + vllm code
 // refer to: https://github.com/vllm-project/vllm/blob/v0.8.2/csrc/custom_all_reduce.cuh
 #pragma once
 
 #include <cuda.h>
-#include <cuda_bf16.h>
-#include <cuda_fp16.h>
-#include <cuda_runtime.h>
+#include <hip/hip_bfloat16.h>
+#include <hip/hip_fp16.h>
+#include <hip/hip_runtime.h>
 
 #include <array>
 #include <iostream>
@@ -32,10 +32,10 @@ struct cuda_error : public std::runtime_error {
 
 #define CHECK_CUDA_SUCCESS(cmd)                                         \
   do {                                                                  \
-    cudaError_t e = cmd;                                                \
-    if (e != cudaSuccess) {                                             \
+    hipError_t e = cmd;                                                \
+    if (e != hipSuccess) {                                             \
       std::stringstream _message;                                       \
-      auto s = cudaGetErrorString(e);                                   \
+      auto s = hipGetErrorString(e);                                   \
       _message << std::string(s) + "\n" << __FILE__ << ':' << __LINE__; \
       throw cuda_error(_message.str());                                 \
     }                                                                   \
@@ -394,7 +394,7 @@ class CustomAllreduce {
       data.ptrs[i] = ptrs[i];
     }
     auto d_data = d_rank_data_base_++;
-    CHECK_CUDA_SUCCESS(cudaMemcpy(d_data, &data, sizeof(RankData), cudaMemcpyHostToDevice));
+    CHECK_CUDA_SUCCESS(hipMemcpy(d_data, &data, sizeof(RankData), hipMemcpyHostToDevice));
     buffers_[ptrs[rank_]] = d_data;
   }
 
@@ -423,8 +423,8 @@ class CustomAllreduce {
         }
       }
     }
-    CHECK_CUDA_SUCCESS(cudaMemcpy(d_rank_data_base_, rank_data.data(),
-                                  sizeof(RankData) * num_buffers, cudaMemcpyHostToDevice));
+    CHECK_CUDA_SUCCESS(hipMemcpy(d_rank_data_base_, rank_data.data(),
+                                  sizeof(RankData) * num_buffers, hipMemcpyHostToDevice));
     d_rank_data_base_ += num_buffers;
     graph_unreg_buffers_.clear();
   }
@@ -439,7 +439,7 @@ class CustomAllreduce {
    * guess is that too many SMs will cause contention on NVLink bus.
    */
   template <typename T>
-  void allreduce(cudaStream_t stream, T* input, T* output, int size, int block_limit,
+  void allreduce(hipStream_t stream, T* input, T* output, int size, int block_limit,
                  int threads = 512) {
     auto d = packed_t<T>::P::size;
     if (size % d != 0)
@@ -511,7 +511,9 @@ class CustomAllreduce {
 /**
  * To inspect PTX/SASS, copy paste this header file to compiler explorer and add
  a template instantiation:
- * template void vllm::CustomAllreduce::allreduce<half>(cudaStream_t, half *,
+ * template void vllm::CustomAllreduce::allreduce<half>(hipStream_t, half *,
  half *, int, int, int);
 */
 }  // namespace vllm
+
+

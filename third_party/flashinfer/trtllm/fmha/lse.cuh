@@ -1,4 +1,4 @@
-/*
+﻿/*
 Copyright (c) 2025 by FlashInfer team.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,8 +38,8 @@ __global__ void ComputeLSEFromMDKernel(float2* __restrict__ md, float* __restric
 #endif
 }
 
-inline cudaError_t ComputeLSEFromMD(float2* md, float* lse, int n, bool launch_with_pdl,
-                                    cudaStream_t stream) {
+inline hipError_t ComputeLSEFromMD(float2* md, float* lse, int n, bool launch_with_pdl,
+                                    hipStream_t stream) {
   int num_threads = std::min(1024, UpPowerOfTwo(n));
   int num_blocks = ceil_div(n, num_threads);
   cudaLaunchConfig_t config;
@@ -53,10 +53,11 @@ inline cudaError_t ComputeLSEFromMD(float2* md, float* lse, int n, bool launch_w
   config.numAttrs = 1;
   config.attrs = attrs;
 
-  FLASHINFER_CUDA_CALL(cudaLaunchKernelEx(&config, ComputeLSEFromMDKernel, md, lse, n));
-  return cudaSuccess;
+  FLASHINFER_HIP_CALL(cudaLaunchKernelEx(&config, ComputeLSEFromMDKernel, md, lse, n));
+  return hipSuccess;
 }
 
 };  // namespace flashinfer
 
 #endif  // FLASHINFER_TRTLLM_FMHA_LSE_CUH
+

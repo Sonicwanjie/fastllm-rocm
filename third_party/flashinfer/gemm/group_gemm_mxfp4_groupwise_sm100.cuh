@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2025 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -95,10 +95,10 @@ __global__ void compute_sm100_cutlass_group_gemm_args(
 
 template <int TileM, int TileN, int TileK, int MmaSM, bool SwapAB, typename DTypeInA,
           typename DTypeInB, typename DTypeSFA, typename DTypeSFB, typename DTypeOut>
-cudaError_t CutlassMXFP4GroupwiseScaledGroupGEMMSM100(
+hipError_t CutlassMXFP4GroupwiseScaledGroupGEMMSM100(
     void* int_buffer, size_t int_buffer_size_in_bytes, void* float_buffer,
     size_t float_buffer_size_in_bytes, DTypeInA* A, DTypeInB* B, DTypeSFA* SFA, DTypeSFB* SFB,
-    DTypeOut* D, int* m_indptr, int n, int k, int num_groups, cudaStream_t stream) {
+    DTypeOut* D, int* m_indptr, int n, int k, int num_groups, hipStream_t stream) {
   using ProblemShape = cutlass::gemm::GroupProblemShape<Shape<int, int, int>>;  // <M,N,K> per group
 
   using ElementA =
@@ -230,12 +230,12 @@ cudaError_t CutlassMXFP4GroupwiseScaledGroupGEMMSM100(
       ProblemShape::UnderlyingProblemShape, StrideA, StrideB, StrideD, LayoutSFA, LayoutSFB>;
 
   if constexpr (SwapAB) {
-    FLASHINFER_CUDA_CALL(cudaLaunchKernelEx(&config, prepare_args_kernel, B, A, SFB, SFA, D,
+    FLASHINFER_HIP_CALL(cudaLaunchKernelEx(&config, prepare_args_kernel, B, A, SFB, SFA, D,
                                             m_indptr, n, k, num_groups, problem_sizes, A_ptr, B_ptr,
                                             SFA_ptr, SFB_ptr, D_ptr, stride_A, stride_B, stride_D,
                                             layout_SFA, layout_SFB));
   } else {
-    FLASHINFER_CUDA_CALL(cudaLaunchKernelEx(&config, prepare_args_kernel, A, B, SFA, SFB, D,
+    FLASHINFER_HIP_CALL(cudaLaunchKernelEx(&config, prepare_args_kernel, A, B, SFA, SFB, D,
                                             m_indptr, n, k, num_groups, problem_sizes, A_ptr, B_ptr,
                                             SFA_ptr, SFB_ptr, D_ptr, stride_A, stride_B, stride_D,
                                             layout_SFA, layout_SFB));
@@ -281,7 +281,7 @@ cudaError_t CutlassMXFP4GroupwiseScaledGroupGEMMSM100(
   CUTLASS_CHECK(gemm.can_implement(arguments));
   CUTLASS_CHECK(gemm.initialize(arguments, workspace_ptr));
   CUTLASS_CHECK(gemm.run(stream, /*cuda_adapter=*/nullptr, /*launch_with_pdl=*/true));
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 }  // namespace group_gemm
@@ -289,3 +289,4 @@ cudaError_t CutlassMXFP4GroupwiseScaledGroupGEMMSM100(
 }  // namespace flashinfer
 
 #endif  // FLASHINFER_GROUP_GEMM_MXFP4_GROUPWISE_SM100_CUH_
+

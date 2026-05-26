@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2023 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,9 +16,10 @@
 #ifndef FLASHINFER_MATH_CUH_
 #define FLASHINFER_MATH_CUH_
 
-#include <cuda_fp16.h>
-#include <cuda_runtime.h>
+#include <hip/hip_fp16.h>
+#include <hip/hip_runtime.h>
 
+#include <cmath>
 #include <cstdint>
 
 namespace flashinfer {
@@ -36,119 +37,97 @@ __forceinline__ __device__ half2 uint32_as_half2(uint32_t x) { return *(half2*)&
 __forceinline__ __device__ uint32_t half2_as_uint32(half2 x) { return *(uint32_t*)&x; }
 
 /*!
- * \brief Wrapper of PTX ex2.approx instruction, which computes 2^x
+ * \brief Wrapper of ex2 instruction, which computes 2^x
  * \param x input
  */
 __forceinline__ __device__ float ptx_exp2(float x) {
-  float y;
-  asm volatile("ex2.approx.ftz.f32 %0, %1;" : "=f"(y) : "f"(x));
-  return y;
+  return exp2f(x);
 }
 
 /*!
- * \brief Wrapper of PTX lg2.approx instruction, which computes log2(x)
+ * \brief Wrapper of log2 instruction, which computes log2(x)
  * \param x input
  */
 __forceinline__ __device__ float ptx_log2(float x) {
-  float y;
-  asm volatile("lg2.approx.ftz.f32 %0, %1;" : "=f"(y) : "f"(x));
-  return y;
+  return log2f(x);
 }
 
 /*!
- * \brief Wrapper of PTX ex2.approx.f16x2 instruction, which computes 2^x
+ * \brief Computes 2^x for half2
  * \param x input
  */
 __forceinline__ __device__ half2 ptx_exp2(half2 x) {
-  uint32_t y_u32;
-  uint32_t x_u32 = half2_as_uint32(x);
-  asm volatile("ex2.approx.f16x2 %0, %1;" : "=r"(y_u32) : "r"(x_u32));
-  return uint32_as_half2(y_u32);
+  float lo = __low2float(x);
+  float hi = __high2float(x);
+  return __floats2half2_rn(exp2f(lo), exp2f(hi));
 }
 
 /*!
- * \brief Wrapper of PTX ex2.approx.f16 instruction, which computes 2^x
+ * \brief Computes 2^x for half
  * \param x input
  */
 __forceinline__ __device__ half ptx_exp2(half x) {
-  ushort y_u16;
-  asm volatile("ex2.approx.f16 %0, %1;" : "=h"(y_u16) : "h"(__half_as_ushort(x)));
-  return __ushort_as_half(y_u16);
+  return __float2half(exp2f(__half2float(x)));
 }
 
 /*!
- * \brief Wrapper of PTX rcp.approx instruction, which computes 1/x
+ * \brief Computes 1/x
  * \param x input
  */
 __forceinline__ __device__ float ptx_rcp(float x) {
-  float y;
-  asm volatile("rcp.approx.ftz.f32 %0, %1;" : "=f"(y) : "f"(x));
-  return y;
+  return __frcp_rn(x);
 }
 
 /*!
- * \brief Wrapper of PTX shfl.sync.bfly instruction, which performs a butterfly shuffle
- *   between threads in a warp.
+ * \brief Performs a butterfly shuffle between threads in a warp.
  * \param x The value in the source lane
- * \param lane_mask The mask to perform thread index xor with: y[i] <- x[i ^ delta]
+ * \param lane_mask The mask to perform thread index xor with
  */
 __forceinline__ __device__ float shfl_xor_sync(float x, int lane_mask) {
-  float y;
-  asm volatile("shfl.sync.bfly.b32 %0, %1, %2, 0x1f, 0xffffffff;"
-               : "=f"(y)
-               : "f"(x), "r"(lane_mask));
-  return y;
+  return __shfl_xor(x, lane_mask);
 }
 
 /*!
- * \brief Wrapper of PTX shfl.sync.bfly instruction on half2, which performs a butterfly
- *   shuffle between threads in a warp.
+ * \brief Performs a butterfly shuffle on half2
  * \param x The value in the source lane
- * \param lane_mask The mask to perform thread index xor with: y[i] <- x[i ^ lane_mask]
+ * \param lane_mask The mask to perform thread index xor with
  */
 __forceinline__ __device__ half2 shfl_xor_sync(half2 x, int lane_mask) {
-  return __shfl_xor_sync(0xffffffff, x, lane_mask);
+  return __shfl_xor(x, lane_mask);
 }
 
 /*!
- * \brief Wrapper of PTX rsqrt approximation instruction, which computes 1/sqrt(x)
+ * \brief Computes 1/sqrt(x)
  * \param x input
  */
 __forceinline__ __device__ float rsqrt(float x) {
-  float y;
-  asm volatile("rsqrt.approx.ftz.f32 %0, %1;" : "=f"(y) : "f"(x));
-  return y;
+  return __frsqrt_rn(x);
 }
 
 /*!
- * \brief Wrapper of PTX tanh.approx.f32 instruction, which computes tanh(x)
+ * \brief Computes tanh(x) for float
  * \param x input
  */
 __forceinline__ __device__ float tanh(float x) {
-  float y;
-  asm volatile("tanh.approx.f32 %0, %1;" : "=f"(y) : "f"(x));
-  return y;
+  return tanhf(x);
 }
 
 /*!
- * \brief Wrapper of PTX tanh.approx.f16x2 instruction, which computes tanh(x)
+ * \brief Computes tanh(x) for half2
  * \param x input
  */
 __forceinline__ __device__ half2 tanh(half2 x) {
-  uint32_t y_u32;
-  uint32_t x_u32 = half2_as_uint32(x);
-  asm volatile("tanh.approx.f16x2 %0, %1;" : "=r"(y_u32) : "r"(x_u32));
-  return uint32_as_half2(y_u32);
+  float lo = __low2float(x);
+  float hi = __high2float(x);
+  return __floats2half2_rn(tanhf(lo), tanhf(hi));
 }
 
 /*!
- * \brief Wrapper of PTX tanh.approx.f16 instruction, which computes tanh(x)
+ * \brief Computes tanh(x) for half
  * \param x input
  */
 __forceinline__ __device__ half tanh(half x) {
-  ushort y_u16;
-  asm volatile("tanh.approx.f16 %0, %1;" : "=h"(y_u16) : "h"(__half_as_ushort(x)));
-  return __ushort_as_half(y_u16);
+  return __float2half(tanhf(__half2float(x)));
 }
 
 }  // namespace math

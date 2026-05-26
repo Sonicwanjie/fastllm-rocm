@@ -118,6 +118,7 @@ int main(int argc, char **argv) {
     fastllm::GenerationConfig generationConfig;
     ParseArgs(argc, argv, config, generationConfig);
 
+    setvbuf(stdout, NULL, _IONBF, 0);
     fastllm::PrintInstructionInfo();
     fastllm::SetThreads(config.threads);
     fastllm::SetLowMemMode(config.lowMemMode);

@@ -1,10 +1,10 @@
-// SPDX-FileCopyrightText: 2023-2025 FlashInfer team.
+﻿// SPDX-FileCopyrightText: 2023-2025 FlashInfer team.
 // SPDX-FileCopyrightText: 2025 Advanced Micro Devices, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
 #pragma once
 
-#include <cuda_runtime.h>
+#include <hip/hip_runtime.h>
 
 #include <cstdint>
 
@@ -175,3 +175,4 @@ __device__ __forceinline__ void pred_load(T* smem_ptr, const T* gmem_ptr, bool p
 }  // namespace detail
 }  // namespace gpu_iface
 }  // namespace flashinfer
+

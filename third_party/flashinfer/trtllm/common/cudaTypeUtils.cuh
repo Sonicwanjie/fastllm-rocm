@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2022-2024, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,13 +18,13 @@
 
 #include <assert.h>
 #include <cuda.h>
-#include <cuda_fp16.h>
+#include <hip/hip_fp16.h>
 
 #include "flashinfer/trtllm/common/cudaBf16Fallbacks.cuh"
 #include "flashinfer/trtllm/common/cudaBf16Wrapper.h"
 #include "flashinfer/trtllm/common/cudaFp8Utils.h"
 #if ENABLE_BF16
-#include <cuda_bf16.h>
+#include <hip/hip_bfloat16.h>
 #endif
 
 namespace tensorrt_llm {
@@ -645,3 +645,4 @@ __device__ inline __nv_fp8_e4m3 cuda_cast<__nv_fp8_e4m3, int8_t>(int8_t val) {
 
 }  // namespace common
 }  // namespace tensorrt_llm
+

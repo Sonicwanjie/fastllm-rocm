@@ -2,6 +2,8 @@
 
 cmake_minimum_required(VERSION 3.5 FATAL_ERROR)
 
+set(PYTHON3_EXECUTABLE "python")
+
 set(HIPIFY_DICT_FILE ${CMAKE_BINARY_DIR}/hipify_output_dict_dump.txt)
 set(_temp_file_cuda_to_hip_list "cuda_to_hip_list")
 
@@ -82,7 +84,7 @@ function(hipify)
 
   if(HIPIFY_CONFIG_FILE)
     set(HIPIFY_COMMAND
-      ${HIPIFY_DIR}/hipify_cli.py
+      ${PYTHON3_EXECUTABLE} ${HIPIFY_DIR}/hipify_cli.py
       --config-json ${HIPIFY_CONFIG_FILE}
       --dump-dict-file ${HIPIFY_DICT_FILE}
     )
@@ -91,7 +93,7 @@ function(hipify)
       set(HIPIFY_HIP_SOURCE_DIR ${HIPIFY_CUDA_SOURCE_DIR})
     endif()
     set(HIPIFY_COMMAND
-      ${HIPIFY_DIR}/hipify_cli.py
+      ${PYTHON3_EXECUTABLE} ${HIPIFY_DIR}/hipify_cli.py
       --project-directory ${HIPIFY_CUDA_SOURCE_DIR}
       --output-directory ${HIPIFY_HIP_SOURCE_DIR}
       --header-include-dirs [${HIPIFY_HEADER_INCLUDE_DIR}]

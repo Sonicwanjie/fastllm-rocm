@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2023 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -302,15 +302,15 @@ __global__ void BlockSparseIndicesToVectorSparseOffsetsKernel(
 }
 
 template <typename IdType>
-cudaError_t BlockSparseIndicesToVectorSparseOffset(
+hipError_t BlockSparseIndicesToVectorSparseOffset(
     IdType* block_sparse_indices, IdType* block_sparse_indptr, IdType* vector_sparse_offsets,
     IdType* vector_sparse_indptr, IdType* kv_lens, const int64_t stride_block,
     const int64_t stride_n, const int64_t batch_size, const uint32_t block_size,
-    cudaStream_t stream = nullptr) {
+    hipStream_t stream = nullptr) {
   int dev_id = 0;
   int num_sms = 0;
-  FLASHINFER_CUDA_CALL(cudaGetDevice(&dev_id));
-  FLASHINFER_CUDA_CALL(cudaDeviceGetAttribute(&num_sms, cudaDevAttrMultiProcessorCount, dev_id));
+  FLASHINFER_HIP_CALL(cudaGetDevice(&dev_id));
+  FLASHINFER_HIP_CALL(hipDeviceGetAttribute(&num_sms, hipDeviceAttributeMultiprocessorCount, dev_id));
 
   uint32_t num_threads = 512;
 
@@ -327,9 +327,9 @@ cudaError_t BlockSparseIndicesToVectorSparseOffset(
                   (void*)&batch_size,
                   (void*)&block_size_fastdiv};
 
-  FLASHINFER_CUDA_CALL(cudaLaunchKernel((void*)kernel, num_sms, num_threads, args, 0, stream));
+  FLASHINFER_HIP_CALL(cudaLaunchKernel((void*)kernel, num_sms, num_threads, args, 0, stream));
 
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 /*!
@@ -343,8 +343,8 @@ cudaError_t BlockSparseIndicesToVectorSparseOffset(
  * \return status Indicates whether CUDA calls are successful
  */
 template <typename DType, typename IdType>
-cudaError_t AppendPagedKVCacheDecode(paged_kv_t<DType, IdType> paged_kv, DType* key, DType* value,
-                                     cudaStream_t stream = nullptr) {
+hipError_t AppendPagedKVCacheDecode(paged_kv_t<DType, IdType> paged_kv, DType* key, DType* value,
+                                     hipStream_t stream = nullptr) {
   uint32_t head_dim = paged_kv.head_dim;
   uint32_t batch_size = paged_kv.batch_size;
   uint32_t num_heads = paged_kv.num_heads;
@@ -357,9 +357,9 @@ cudaError_t AppendPagedKVCacheDecode(paged_kv_t<DType, IdType> paged_kv, DType* 
     dim3 nthrs(bdx, bdy);
     auto kernel = AppendPagedKVCacheDecodeKernel<HEAD_DIM, vec_size, DType, IdType>;
     void* args[] = {(void*)&paged_kv, (void*)&key, (void*)&value};
-    FLASHINFER_CUDA_CALL(cudaLaunchKernel((void*)kernel, nblks, nthrs, args, 0, stream));
+    FLASHINFER_HIP_CALL(cudaLaunchKernel((void*)kernel, nblks, nthrs, args, 0, stream));
   });
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 /*!
@@ -375,18 +375,18 @@ cudaError_t AppendPagedKVCacheDecode(paged_kv_t<DType, IdType> paged_kv, DType* 
  * \return status Indicates whether CUDA calls are successful
  */
 template <typename DType, typename IdType>
-cudaError_t AppendPagedKVCache(paged_kv_t<DType, IdType> paged_kv, DType* append_key,
+hipError_t AppendPagedKVCache(paged_kv_t<DType, IdType> paged_kv, DType* append_key,
                                DType* append_value, IdType* batch_indices, IdType* positions,
                                uint32_t nnz, size_t append_k_stride_n, size_t append_k_stride_h,
                                size_t append_v_stride_n, size_t append_v_stride_h,
-                               cudaStream_t stream = nullptr) {
+                               hipStream_t stream = nullptr) {
   uint32_t head_dim = paged_kv.head_dim;
   uint32_t num_heads = paged_kv.num_heads;
   int dev_id = 0;
   int num_sms = 0;
   int num_blocks_per_sm = 0;
-  FLASHINFER_CUDA_CALL(cudaGetDevice(&dev_id));
-  FLASHINFER_CUDA_CALL(cudaDeviceGetAttribute(&num_sms, cudaDevAttrMultiProcessorCount, dev_id));
+  FLASHINFER_HIP_CALL(cudaGetDevice(&dev_id));
+  FLASHINFER_HIP_CALL(hipDeviceGetAttribute(&num_sms, hipDeviceAttributeMultiprocessorCount, dev_id));
 
   DISPATCH_HEAD_DIM(head_dim, HEAD_DIM, {
     constexpr uint32_t vec_size = std::max(16 / sizeof(DType), HEAD_DIM / 32);
@@ -395,7 +395,7 @@ cudaError_t AppendPagedKVCache(paged_kv_t<DType, IdType> paged_kv, DType* append
     uint32_t num_threads = bdx * bdy;
     uint32_t smem_size = 0;
     auto kernel = AppendPagedKVCacheKernel<HEAD_DIM, vec_size, DType, IdType>;
-    FLASHINFER_CUDA_CALL(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&num_blocks_per_sm, kernel,
+    FLASHINFER_HIP_CALL(hipOccupancyMaxActiveBlocksPerMultiprocessor(&num_blocks_per_sm, kernel,
                                                                        num_threads, smem_size));
     num_blocks_per_sm = min(num_blocks_per_sm, ceil_div(int(nnz), num_sms));
     dim3 nblks(num_blocks_per_sm * num_sms);
@@ -405,9 +405,9 @@ cudaError_t AppendPagedKVCache(paged_kv_t<DType, IdType> paged_kv, DType* append
                     (void*)&batch_indices,     (void*)&positions,         (void*)&nnz,
                     (void*)&append_k_stride_n, (void*)&append_k_stride_h, (void*)&append_v_stride_n,
                     (void*)&append_v_stride_h};
-    FLASHINFER_CUDA_CALL(cudaLaunchKernel((void*)kernel, nblks, nthrs, args, 0, stream));
+    FLASHINFER_HIP_CALL(cudaLaunchKernel((void*)kernel, nblks, nthrs, args, 0, stream));
   });
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 template <typename DType, typename IdType>
@@ -602,15 +602,15 @@ __global__ void AppendPagedKVMlaCacheKernel(paged_kv_mla_t<DType, IdType> paged_
 }
 
 template <typename DType, typename IdType>
-cudaError_t AppendPagedKVMlaCache(paged_kv_mla_t<DType, IdType> paged_kv, DType* append_ckv,
+hipError_t AppendPagedKVMlaCache(paged_kv_mla_t<DType, IdType> paged_kv, DType* append_ckv,
                                   DType* append_kpe, IdType* batch_indices, IdType* positions,
                                   uint32_t nnz, size_t append_ckv_stride_n,
-                                  size_t append_kpe_stride_n, cudaStream_t stream = nullptr) {
+                                  size_t append_kpe_stride_n, hipStream_t stream = nullptr) {
   int dev_id = 0;
   int num_sms = 0;
   int num_blocks_per_sm = 0;
-  FLASHINFER_CUDA_CALL(cudaGetDevice(&dev_id));
-  FLASHINFER_CUDA_CALL(cudaDeviceGetAttribute(&num_sms, cudaDevAttrMultiProcessorCount, dev_id));
+  FLASHINFER_HIP_CALL(cudaGetDevice(&dev_id));
+  FLASHINFER_HIP_CALL(hipDeviceGetAttribute(&num_sms, hipDeviceAttributeMultiprocessorCount, dev_id));
 
   uint32_t head_dim_ckv = paged_kv.head_dim_ckv;
   uint32_t head_dim_kpe = paged_kv.head_dim_kpe;
@@ -624,7 +624,7 @@ cudaError_t AppendPagedKVMlaCache(paged_kv_mla_t<DType, IdType> paged_kv, DType*
   uint32_t num_threads = bdx;
   uint32_t smem_size = 0;
   auto kernel = AppendPagedKVMlaCacheKernel<HEAD_CKV_DIM, HEAD_KPE_DIM, vec_size, DType, IdType>;
-  FLASHINFER_CUDA_CALL(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&num_blocks_per_sm, kernel,
+  FLASHINFER_HIP_CALL(hipOccupancyMaxActiveBlocksPerMultiprocessor(&num_blocks_per_sm, kernel,
                                                                      num_threads, smem_size));
   num_blocks_per_sm = min(num_blocks_per_sm, ceil_div(int(nnz), num_sms));
   dim3 nblks(num_blocks_per_sm * num_sms);
@@ -637,10 +637,12 @@ cudaError_t AppendPagedKVMlaCache(paged_kv_mla_t<DType, IdType> paged_kv, DType*
                   (void*)&nnz,
                   (void*)&append_ckv_stride_n,
                   (void*)&append_kpe_stride_n};
-  FLASHINFER_CUDA_CALL(cudaLaunchKernel((void*)kernel, nblks, nthrs, args, 0, stream));
-  return cudaSuccess;
+  FLASHINFER_HIP_CALL(cudaLaunchKernel((void*)kernel, nblks, nthrs, args, 0, stream));
+  return hipSuccess;
 }
 
 }  // namespace flashinfer
 
 #endif  // FLAHSINFER_PAGE_CUH_
+
+

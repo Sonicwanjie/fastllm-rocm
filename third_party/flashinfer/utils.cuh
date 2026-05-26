@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2023 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,11 +15,11 @@
  */
 #ifndef FLASHINFER_UTILS_CUH_
 #define FLASHINFER_UTILS_CUH_
-#include <cuda_bf16.h>
-#include <cuda_device_runtime_api.h>
-#include <cuda_fp16.h>
-#include <cuda_fp8.h>
-#include <cuda_runtime.h>
+#include <hip/hip_bfloat16.h>
+// // #include <cuda_device_runtime_api.h> // removed for HIP
+#include <hip/hip_fp16.h>
+#include <hip/hip_fp8.h>
+#include <hip/hip_runtime.h>
 
 #include <cstdint>
 #include <iostream>
@@ -37,20 +37,20 @@
 #endif
 
 #ifndef NDEBUG
-#define FLASHINFER_CUDA_CALL(func, ...)                                                     \
+#define FLASHINFER_HIP_CALL(func, ...)                                                     \
   {                                                                                         \
-    cudaError_t e = (func);                                                                 \
-    if (e != cudaSuccess) {                                                                 \
-      std::cerr << "CUDA Error: " << cudaGetErrorString(e) << " (" << e << ") " << __FILE__ \
+    hipError_t e = (func);                                                                 \
+    if (e != hipSuccess) {                                                                 \
+      std::cerr << "HIP Error: " << hipGetErrorString(e) << " (" << e << ") " << __FILE__ \
                 << ": line " << __LINE__ << " at function " << STR(func) << std::endl;      \
       return e;                                                                             \
     }                                                                                       \
   }
 #else
-#define FLASHINFER_CUDA_CALL(func, ...) \
+#define FLASHINFER_HIP_CALL(func, ...) \
   {                                     \
-    cudaError_t e = (func);             \
-    if (e != cudaSuccess) {             \
+    hipError_t e = (func);             \
+    if (e != hipSuccess) {             \
       return e;                         \
     }                                   \
   }
@@ -328,10 +328,10 @@ __forceinline__ __device__ __host__ T1 round_up(const T1 x, const T2 y) {
 
 inline std::pair<int, int> GetCudaComputeCapability() {
   int device_id = 0;
-  cudaGetDevice(&device_id);
+  hipGetDevice(&device_id);
   int major = 0, minor = 0;
-  cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, device_id);
-  cudaDeviceGetAttribute(&minor, cudaDevAttrComputeCapabilityMinor, device_id);
+  hipDeviceGetAttribute(&major, hipDeviceAttributeComputeCapabilityMajor, device_id);
+  hipDeviceGetAttribute(&minor, hipDeviceAttributeComputeCapabilityMinor, device_id);
   return std::make_pair(major, minor);
 }
 
@@ -339,7 +339,7 @@ template <typename T>
 inline void DebugPrintCUDAArray(T* device_ptr, size_t size, std::string prefix = "") {
   std::vector<T> host_array(size);
   std::cout << prefix;
-  cudaMemcpy(host_array.data(), device_ptr, size * sizeof(T), cudaMemcpyDeviceToHost);
+  hipMemcpy(host_array.data(), device_ptr, size * sizeof(T), hipMemcpyDeviceToHost);
   for (size_t i = 0; i < size; ++i) {
     std::cout << host_array[i] << " ";
   }
@@ -441,3 +441,6 @@ __device__ __forceinline__ uint32_t dim4_offset(const uint32_t& dim_c, const uin
 }  // namespace flashinfer
 
 #endif  // FLASHINFER_UTILS_CUH_
+
+
+

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2025 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +16,7 @@
 
 #ifndef FLASHINFER_PROFILER_CUH_
 #define FLASHINFER_PROFILER_CUH_
-#include <cuda.h>
+#include <hip/hip_runtime.h>
 
 namespace flashinfer {
 
@@ -55,7 +55,7 @@ __device__ __forceinline__ uint32_t encode_tag(uint32_t sm_id, uint32_t block_id
 
 __device__ __forceinline__ uint32_t get_timestamp() {
   volatile uint32_t ret;
-  asm volatile("mov.u32 %0, %globaltimer_lo;" : "=r"(ret));
+  ret = __builtin_amdgcn_read_exec_lo(); // approximate timestamp
   return ret;
 }
 
@@ -89,7 +89,7 @@ struct ProfilerEntry {
 #define PROFILER_INIT(params, smem_storage, closure, group_idx, num_groups,     \
                       write_thread_predicate)                                   \
   uint32_t _sm_idx;                                                             \
-  asm volatile("mov.u32 %0, %smid;" : "=r"(_sm_idx));                           \
+  _sm_idx = __smid();                           \
   if (get_block_idx() == 0 && get_thread_idx() == 0) {                          \
     closure.entry.nblocks = get_num_blocks();                                   \
     closure.entry.ngroups = num_groups;                                         \
@@ -147,3 +147,4 @@ struct ProfilerEntry {
 }  // namespace flashinfer
 
 #endif  // FLASHINFER_PROFILER_CUH_
+

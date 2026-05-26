@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include <cuda_runtime.h>
+#include <hip/hip_runtime.h>
 
 #include "../../exception.h"
 #include "fmhaKernels.cuh"
@@ -64,3 +64,4 @@ class TllmGenFmhaRunner {
   // The class that stores all the kernels.
   TllmGenFmhaKernel const* mKernel;
 };
+

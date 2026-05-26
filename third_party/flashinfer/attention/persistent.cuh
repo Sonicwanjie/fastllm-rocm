@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2025 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -596,9 +596,9 @@ struct BlockBatchReductionPersistent {
 
 template <uint32_t CTA_TILE_Q_1, uint32_t CTA_TILE_Q_2, uint32_t HEAD_DIM_QK, uint32_t HEAD_DIM_VO,
           MaskMode MASK_MODE, typename AttentionVariant, typename Params>
-cudaError_t BatchPagedAttentionPersistent(const Params params_1, const Params params_2,
+hipError_t BatchPagedAttentionPersistent(const Params params_1, const Params params_2,
                                           const uint32_t num_blks_x, const uint32_t num_blks_y,
-                                          const cudaStream_t stream) {
+                                          const hipStream_t stream) {
   using DTypeQ = typename Params::DTypeQ;
   using DTypeKV = typename Params::DTypeKV;
   using DTypeO = typename Params::DTypeO;
@@ -633,16 +633,18 @@ cudaError_t BatchPagedAttentionPersistent(const Params params_1, const Params pa
   auto kernel = PersistentKernelTemplate<BlockBatchPagedAttentionPersistent<KTraits1, Params>,
                                          BlockBatchPagedAttentionPersistent<KTraits2, Params>,
                                          BlockBatchReductionPersistent<ReductionKTraits>>;
-  FLASHINFER_CUDA_CALL(
-      cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size));
+  FLASHINFER_HIP_CALL(
+      hipFuncSetAttribute(kernel, hipFuncAttributeMaxDynamicSharedMemorySize, smem_size));
   dim3 nblks(num_blks_x, num_blks_y);
   dim3 nthrs(NUM_THREADS);
   void* args[] = {(void*)&params_1, (void*)&params_2};
-  FLASHINFER_CUDA_CALL(
+  FLASHINFER_HIP_CALL(
       cudaLaunchCooperativeKernel((void*)kernel, nblks, nthrs, args, smem_size, stream));
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 };  // namespace flashinfer
 
 #endif  // FLASHINFER_PERSISTENT_CUH_
+
+

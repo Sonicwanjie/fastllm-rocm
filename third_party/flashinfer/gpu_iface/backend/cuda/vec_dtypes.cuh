@@ -1,13 +1,13 @@
-// SPDX-FileCopyrightText: 2023-2025 FlashInfer team.
+﻿// SPDX-FileCopyrightText: 2023-2025 FlashInfer team.
 // SPDX-FileCopyrightText: 2025 Advanced Micro Devices, Inc.
 // SPDX-License-Identifier: Apache-2.0
 #ifndef VEC_DTYPES_CUH_
 #define VEC_DTYPES_CUH_
 
-#include <cuda_bf16.h>
-#include <cuda_fp16.h>
-#include <cuda_fp8.h>
-#include <cuda_runtime.h>
+#include <hip/hip_bfloat16.h>
+#include <hip/hip_fp16.h>
+#include <hip/hip_fp8.h>
+#include <hip/hip_runtime.h>
 
 #include <type_traits>
 
@@ -1381,3 +1381,4 @@ struct vec_t<float, vec_size> {
 }  // namespace detail
 
 #endif  // VEC_DTYPES_CUH_
+

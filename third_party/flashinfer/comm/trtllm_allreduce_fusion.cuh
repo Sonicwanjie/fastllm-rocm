@@ -1,10 +1,10 @@
-#include <cooperative_groups.h>
+﻿#include <cooperative_groups.h>
 #include <cuda.h>
-#include <cuda_bf16.h>
-#include <cuda_fp16.h>
+#include <hip/hip_bfloat16.h>
+#include <hip/hip_fp16.h>
 
 #if CUDA_VERSION >= 12080
-#include <cuda_fp4.h>
+// #include <cuda_fp4.h>  // FP4 not supported on HIP
 #endif
 
 #include <cuda/std/optional>
@@ -424,22 +424,22 @@ __inline__ __device__ T blockReduceSumV2(T* val) {
 
 inline int getSMVersion() {
   int device{-1};
-  FLASHINFER_CUDA_CALL(cudaGetDevice(&device));
+  FLASHINFER_HIP_CALL(cudaGetDevice(&device));
   int sm_major = 0;
   int sm_minor = 0;
-  FLASHINFER_CUDA_CALL(
-      cudaDeviceGetAttribute(&sm_major, cudaDevAttrComputeCapabilityMajor, device));
-  FLASHINFER_CUDA_CALL(
-      cudaDeviceGetAttribute(&sm_minor, cudaDevAttrComputeCapabilityMinor, device));
+  FLASHINFER_HIP_CALL(
+      hipDeviceGetAttribute(&sm_major, hipDeviceAttributeComputeCapabilityMajor, device));
+  FLASHINFER_HIP_CALL(
+      hipDeviceGetAttribute(&sm_minor, hipDeviceAttributeComputeCapabilityMinor, device));
   return sm_major * 10 + sm_minor;
 }
 
 inline int getSMRegisters() {
   int device{-1};
-  FLASHINFER_CUDA_CALL(cudaGetDevice(&device));
+  FLASHINFER_HIP_CALL(cudaGetDevice(&device));
   int regs_per_block;
-  FLASHINFER_CUDA_CALL(
-      cudaDeviceGetAttribute(&regs_per_block, cudaDevAttrMaxRegistersPerBlock, device));
+  FLASHINFER_HIP_CALL(
+      hipDeviceGetAttribute(&regs_per_block, cudaDevAttrMaxRegistersPerBlock, device));
   return regs_per_block;
 }
 
@@ -765,7 +765,7 @@ struct AllReduceFusionParams {
   float* scale_factor;
   bool use_oneshot;
   QuantizationSFLayout layout = QuantizationSFLayout::SWIZZLED_128x4;
-  cudaStream_t stream;
+  hipStream_t stream;
   AllReduceFusionPattern pattern;
   bool trigger_completion_at_end = true;
 };
@@ -1300,22 +1300,22 @@ int get_sm_count() {
   static int sm_count = 0;
   if (sm_count == 0) {
     int device_id;
-    FLASHINFER_CUDA_CALL(cudaGetDevice(&device_id));
-    FLASHINFER_CUDA_CALL(
-        cudaDeviceGetAttribute(&sm_count, cudaDevAttrMultiProcessorCount, device_id));
+    FLASHINFER_HIP_CALL(cudaGetDevice(&device_id));
+    FLASHINFER_HIP_CALL(
+        hipDeviceGetAttribute(&sm_count, hipDeviceAttributeMultiprocessorCount, device_id));
   }
   return sm_count;
 }
 
 template <AllReduceFusionPattern Pattern, typename T, int NRanks, bool Fp32Acc,
           bool TriggerCompletionAtEnd = true>
-cudaError_t launch_oneshot_lamport(AllReduceFusionParams<T> const& params,
+hipError_t launch_oneshot_lamport(AllReduceFusionParams<T> const& params,
                                    cudaLaunchConfig_t& cfg) {
-  FLASHINFER_CUDA_CALL(cudaLaunchKernelEx(
+  FLASHINFER_HIP_CALL(cudaLaunchKernelEx(
       &cfg,
       allreduce_fusion_kernel_oneshot_lamport<Pattern, T, NRanks, Fp32Acc, TriggerCompletionAtEnd>,
       params));
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 template <AllReduceFusionPattern Pattern, typename T, int NRanks, bool Fp32Acc,
@@ -1324,32 +1324,32 @@ int get_registers_per_thread_oneshot() {
   auto kernel =
       allreduce_fusion_kernel_oneshot_lamport<Pattern, T, NRanks, Fp32Acc, TriggerCompletionAtEnd>;
   cudaFuncAttributes attr;
-  cudaFuncGetAttributes(&attr, kernel);
+  hipFuncGetAttributes(&attr, kernel);
   return attr.numRegs;
 }
 
 template <AllReduceFusionPattern Pattern, typename T, int NRanks, bool Fp32Acc>
-cudaError_t launch_twoshot_sync(AllReduceFusionParams<T> const& params, cudaLaunchConfig_t& cfg,
+hipError_t launch_twoshot_sync(AllReduceFusionParams<T> const& params, cudaLaunchConfig_t& cfg,
                                 std::array<int, NRanks> begin_tokens,
                                 std::array<int, NRanks> token_num_per_ranks) {
-  FLASHINFER_CUDA_CALL(
+  FLASHINFER_HIP_CALL(
       cudaLaunchKernelEx(&cfg, allreduce_fusion_kernel_twoshot_sync<Pattern, T, NRanks, Fp32Acc>,
                          params, begin_tokens, token_num_per_ranks));
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 template <AllReduceFusionPattern Pattern, typename T, int NRanks, bool Fp32Acc>
 int get_registers_per_thread_twoshot() {
   auto kernel = allreduce_fusion_kernel_twoshot_sync<Pattern, T, NRanks, Fp32Acc>;
   cudaFuncAttributes attr;
-  cudaFuncGetAttributes(&attr, kernel);
+  hipFuncGetAttributes(&attr, kernel);
   return attr.numRegs;
 }
 
 bool use_oneshot(int token_num) { return token_num <= details::kOneShotMaxToken; }
 
 template <AllReduceFusionPattern Pattern, typename T, int NRanks, bool Fp32Acc>
-cudaError_t allreduce_fusion_kernel_launcher(AllReduceFusionParams<T> const& params,
+hipError_t allreduce_fusion_kernel_launcher(AllReduceFusionParams<T> const& params,
                                              bool launch_with_pdl) {
   static constexpr int VEC_SIZE = details::kBytesPerAccess / sizeof(T);
   FLASHINFER_CHECK(params.size % params.hidden_dim == 0, "params.size % params.hidden_dim != 0");
@@ -1430,21 +1430,21 @@ cudaError_t allreduce_fusion_kernel_launcher(AllReduceFusionParams<T> const& par
   if (oneshot) {
     bool trigger_completion_at_end = params.trigger_completion_at_end;
     if (trigger_completion_at_end) {
-      FLASHINFER_CUDA_CALL(
+      FLASHINFER_HIP_CALL(
           (launch_oneshot_lamport<Pattern, T, NRanks, Fp32Acc, true>(params, cfg)));
     } else {
-      FLASHINFER_CUDA_CALL(
+      FLASHINFER_HIP_CALL(
           (launch_oneshot_lamport<Pattern, T, NRanks, Fp32Acc, false>(params, cfg)));
     }
   } else {
-    FLASHINFER_CUDA_CALL((launch_twoshot_sync<Pattern, T, NRanks, Fp32Acc>(
+    FLASHINFER_HIP_CALL((launch_twoshot_sync<Pattern, T, NRanks, Fp32Acc>(
         params, cfg, begin_tokens, token_num_per_ranks)));
   }
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 template <typename T>
-cudaError_t allreduce_fusion_op(AllReduceFusionParams<T> const& params, bool launch_with_pdl,
+hipError_t allreduce_fusion_op(AllReduceFusionParams<T> const& params, bool launch_with_pdl,
                                 bool fp32_acc) {
 #define DISPATCH_ACC_TYPE(T, Pattern, NRanks)                                                      \
   if constexpr (std::is_same_v<T, float>) {                                                        \
@@ -1513,3 +1513,7 @@ cudaError_t allreduce_fusion_op(AllReduceFusionParams<T> const& params, bool lau
 }  // namespace trtllm_allreduce_fusion
 
 }  // namespace flashinfer
+
+
+
+

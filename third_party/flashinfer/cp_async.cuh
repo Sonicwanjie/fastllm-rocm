@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2023 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +16,7 @@
 #ifndef FLASHINFER_CP_ASYNC_CUH_
 #define FLASHINFER_CP_ASYNC_CUH_
 
-#include <cuda_runtime.h>
+#include <hip/hip_runtime.h>
 
 #include <cstdint>
 
@@ -187,3 +187,4 @@ __device__ __forceinline__ void pred_load(T* smem_ptr, const T* gmem_ptr, bool p
 }  // namespace flashinfer
 
 #endif  // FLASHINFER_CP_ASYNC_CUH_
+

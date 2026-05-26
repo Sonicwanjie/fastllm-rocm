@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2024-2026 by FlashInfer team.
  * Copyright (c) 2025-2026 by Advanced Micro Devices, Inc.
  *
@@ -1429,7 +1429,7 @@ gpuError_t OnlineSoftmax(DType* logits, DType* output, uint32_t batch_size, uint
             config.attrs = attribute;
             config.numAttrs = 1;
 
-            FLASHINFER_CUDA_CALL(cudaLaunchKernelEx(&config, phase1_kernel, logits, partial_results,
+            FLASHINFER_HIP_CALL(cudaLaunchKernelEx(&config, phase1_kernel, logits, partial_results,
                                                     temperature_arr, temperature_val, d,
                                                     num_slices));
           } else {
@@ -1466,7 +1466,7 @@ gpuError_t OnlineSoftmax(DType* logits, DType* output, uint32_t batch_size, uint
             config.attrs = attribute;
             config.numAttrs = 1;
 
-            FLASHINFER_CUDA_CALL(cudaLaunchKernelEx(&config, phase2_kernel, logits, output,
+            FLASHINFER_HIP_CALL(cudaLaunchKernelEx(&config, phase2_kernel, logits, output,
                                                     partial_results, temperature_arr,
                                                     temperature_val, d, num_slices));
           } else {
@@ -1518,7 +1518,7 @@ gpuError_t OnlineSoftmax(DType* logits, DType* output, uint32_t batch_size, uint
               config.attrs = attribute;
               config.numAttrs = 1;
 
-              FLASHINFER_CUDA_CALL(cudaLaunchKernelEx(&config, kernel, logits, output,
+              FLASHINFER_HIP_CALL(cudaLaunchKernelEx(&config, kernel, logits, output,
                                                       temperature_arr, temperature_val, d));
             } else {
               FI_GPU_CALL(gpuLaunchKernel((void*)kernel, nblks, nthrs, args, smem_size, stream));
@@ -2397,3 +2397,4 @@ gpuError_t ChainSpeculativeSampling(DType* draft_probs, IdType* draft_token_ids,
 }  // namespace flashinfer
 
 #endif  // FLASHINFER_SAMPLING_CUH_
+

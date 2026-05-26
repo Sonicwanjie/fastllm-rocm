@@ -1,3 +1,20 @@
+// Disable SSE/AVX intrinsics when compiling for HIP/ROCm
+// The -x hip flag causes clang to misinterpret x86 intrinsics
+#if defined(__HIP__) || defined(__HIP_PLATFORM_AMD__)
+#undef __SSE__
+#undef __SSE2__
+#undef __SSE3__
+#undef __SSE4_1__
+#undef __SSE4_2__
+#undef __AVX__
+#undef __AVX2__
+#undef __AVX512F__
+#undef __AVX512VL__
+#undef __AVX512BW__
+#undef __AVX512VNNI__
+#undef __AVX512BF16__
+#endif
+
 #include "gguf.h"
 #include <assert.h>
 

@@ -1,0 +1,76 @@
+﻿#pragma once
+// CUDA compatibility shim for HIP builds
+// Redirects cuda_runtime.h to hip/hip_runtime.h
+#include <hip/hip_runtime.h>
+#include <hip/hip_fp16.h>
+#include <hip/hip_bfloat16.h>
+
+// Type aliases
+#define cudaError_t hipError_t
+#define cudaSuccess hipSuccess
+#define cudaGetLastError hipGetLastError
+#define cudaGetErrorString hipGetErrorString
+#define cudaMalloc hipMalloc
+#define cudaFree hipFree
+#define cudaMemset hipMemset
+#define cudaMemsetAsync hipMemsetAsync
+#define cudaMemPrefetchAsync hipMemPrefetchAsync
+#define cudaMemcpy hipMemcpy
+#define cudaMemcpyAsync hipMemcpyAsync
+#define cudaMemcpyHostToDevice hipMemcpyHostToDevice
+#define cudaMemcpyDeviceToHost hipMemcpyDeviceToHost
+#define cudaMemcpyDeviceToDevice hipMemcpyDeviceToDevice
+#define cudaMallocManaged hipMallocManaged
+#define cudaDeviceSynchronize hipDeviceSynchronize
+#define cudaStream_t hipStream_t
+#define cudaEvent_t hipEvent_t
+#define cudaStreamCreate hipStreamCreate
+#define cudaStreamCreateWithFlags hipStreamCreateWithFlags
+#define cudaStreamDestroy hipStreamDestroy
+#define cudaStreamSynchronize hipStreamSynchronize
+#define cudaEventCreate hipEventCreate
+#define cudaEventRecord hipEventRecord
+#define cudaEventSynchronize hipEventSynchronize
+#define cudaEventDestroy hipEventDestroy
+#define cudaEventElapsedTime hipEventElapsedTime
+#define cudaGetDevice hipGetDevice
+#define cudaSetDevice hipSetDevice
+#define cudaGetDeviceCount hipGetDeviceCount
+#define cudaGetDeviceProperties hipGetDeviceProperties
+#define cudaDeviceGetAttribute hipDeviceGetAttribute
+#define cudaDeviceCanAccessPeer hipDeviceCanAccessPeer
+#define cudaDeviceEnablePeerAccess hipDeviceEnablePeerAccess
+#define cudaDeviceDisablePeerAccess hipDeviceDisablePeerAccess
+#define cudaFuncSetAttribute hipFuncSetAttribute
+#define cudaFuncGetAttributes hipFuncGetAttributes
+#define cudaLaunchHostFunc hipLaunchHostFunc
+#define cudaOccupancyMaxActiveBlocksPerMultiprocessor hipOccupancyMaxActiveBlocksPerMultiprocessor
+
+// cudaDeviceProp
+#define cudaDeviceProp hipDeviceProp_t
+
+// Device attributes
+#define cudaDevAttrComputeCapabilityMajor hipDeviceAttributeComputeCapabilityMajor
+#define cudaDevAttrComputeCapabilityMinor hipDeviceAttributeComputeCapabilityMinor
+#define cudaDevAttrMultiProcessorCount hipDeviceAttributeMultiprocessorCount
+#define cudaDevAttrMaxThreadsPerBlock hipDeviceAttributeMaxThreadsPerBlock
+#define cudaDevAttrMaxThreadsPerMultiprocessor hipDeviceAttributeMaxThreadsPerMultiprocessor
+#define cudaDevAttrMaxSharedMemoryPerBlock hipDeviceAttributeMaxSharedMemoryPerBlock
+#define cudaDevAttrTotalConstMem hipDeviceAttributeTotalConstantMemory
+#define cudaDevAttrWarpSize hipDeviceAttributeWarpSize
+#define cudaDevAttrMaxRegistersPerBlock hipDeviceAttributeMaxRegistersPerBlock
+#define cudaDevAttrClockRate hipDeviceAttributeClockRate
+#define cudaDevAttrMemoryClockRate hipDeviceAttributeMemoryClockRate
+#define cudaDevAttrMemoryBusWidth hipDeviceAttributeMemoryBusWidth
+#define cudaDevAttrL2CacheSize hipDeviceAttributeL2CacheSize
+#define cudaDevAttrMaxThreadsPerBlock hipDeviceAttributeMaxThreadsPerBlock
+
+// cudaMemcpyKind
+#define cudaMemcpyKind hipMemcpyKind
+
+// Launch bounds
+#define cudaLaunchKernel hipLaunchKernel
+
+// Error checking macro
+#define CHECK_CUDA(call) CHECK_HIP(call)
+#define checkCudaErrors(msg, val) showError(val, msg, __FILE__, __LINE__)

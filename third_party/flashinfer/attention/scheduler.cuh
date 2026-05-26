@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2023 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +16,7 @@
 #ifndef FLASHINFER_ATTENTION_SCHEDULER_CUH_
 #define FLASHINFER_ATTENTION_SCHEDULER_CUH_
 
-#include <cuda_runtime_api.h>
+#include <hip/hip_runtime_api.h>
 #include <driver_types.h>
 
 #include <algorithm>
@@ -147,11 +147,11 @@ inline auto PrefillBinarySearchKVChunkSize(const bool enable_cuda_graph,
  */
 template <uint32_t GROUP_SIZE, uint32_t HEAD_DIM, PosEncodingMode POS_ENCODING_MODE,
           typename AttentionVariant, typename Params>
-inline cudaError_t BatchDecodeWithPagedKVCacheWorkEstimationDispatched(
+inline hipError_t BatchDecodeWithPagedKVCacheWorkEstimationDispatched(
     bool& split_kv, uint32_t& max_grid_size, uint32_t& max_num_pages_per_batch,
     uint32_t& new_batch_size, uint32_t& gdy, uint32_t batch_size,
     typename Params::IdType* kv_indptr_h, const uint32_t num_qo_heads, const uint32_t page_size,
-    bool enable_cuda_graph, cudaStream_t stream) {
+    bool enable_cuda_graph, hipStream_t stream) {
   using DTypeKV = typename Params::DTypeKV;
   using IdType = typename Params::IdType;
   constexpr uint32_t vec_size = std::max(16UL / sizeof(DTypeKV), HEAD_DIM / 32UL);
@@ -175,9 +175,9 @@ inline cudaError_t BatchDecodeWithPagedKVCacheWorkEstimationDispatched(
     int num_blocks_per_sm = 0;
     int num_sm = 0;
     int dev_id = 0;
-    FLASHINFER_CUDA_CALL(cudaGetDevice(&dev_id));
-    FLASHINFER_CUDA_CALL(cudaDeviceGetAttribute(&num_sm, cudaDevAttrMultiProcessorCount, dev_id));
-    FLASHINFER_CUDA_CALL(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&num_blocks_per_sm, kernel,
+    FLASHINFER_HIP_CALL(cudaGetDevice(&dev_id));
+    FLASHINFER_HIP_CALL(hipDeviceGetAttribute(&num_sm, hipDeviceAttributeMultiprocessorCount, dev_id));
+    FLASHINFER_HIP_CALL(hipOccupancyMaxActiveBlocksPerMultiprocessor(&num_blocks_per_sm, kernel,
                                                                        num_threads, smem_size));
     max_grid_size = num_blocks_per_sm * num_sm;
     if (batch_size * gdy >= max_grid_size) {
@@ -205,16 +205,16 @@ inline cudaError_t BatchDecodeWithPagedKVCacheWorkEstimationDispatched(
         split_kv = true;
       }
     }
-    return cudaSuccess;
+    return hipSuccess;
   })
 }
 
 template <uint32_t HEAD_DIM_CKV, uint32_t HEAD_DIM_KPE, typename AttentionVariant, typename Params>
-inline cudaError_t BatchDecodeWithPagedKVCacheWorkEstimationDispatchedMLA(
+inline hipError_t BatchDecodeWithPagedKVCacheWorkEstimationDispatchedMLA(
     bool& split_kv, uint32_t& max_grid_size, uint32_t& max_num_pages_per_batch,
     uint32_t& new_batch_size, uint32_t& gdy, uint32_t batch_size,
     typename Params::IdType* kv_indptr_h, const uint32_t num_qo_heads, const uint32_t page_size,
-    bool enable_cuda_graph, cudaStream_t stream) {
+    bool enable_cuda_graph, hipStream_t stream) {
   using DTypeKV = typename Params::DTypeKV;
   using IdType = typename Params::IdType;
 
@@ -241,9 +241,9 @@ inline cudaError_t BatchDecodeWithPagedKVCacheWorkEstimationDispatchedMLA(
     int num_blocks_per_sm = 0;
     int num_sm = 0;
     int dev_id = 0;
-    FLASHINFER_CUDA_CALL(cudaGetDevice(&dev_id));
-    FLASHINFER_CUDA_CALL(cudaDeviceGetAttribute(&num_sm, cudaDevAttrMultiProcessorCount, dev_id));
-    FLASHINFER_CUDA_CALL(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&num_blocks_per_sm, kernel,
+    FLASHINFER_HIP_CALL(cudaGetDevice(&dev_id));
+    FLASHINFER_HIP_CALL(hipDeviceGetAttribute(&num_sm, hipDeviceAttributeMultiprocessorCount, dev_id));
+    FLASHINFER_HIP_CALL(hipOccupancyMaxActiveBlocksPerMultiprocessor(&num_blocks_per_sm, kernel,
                                                                        num_threads, smem_size));
     max_grid_size = num_blocks_per_sm * num_sm;
     if (batch_size * gdy >= max_grid_size) {
@@ -272,17 +272,17 @@ inline cudaError_t BatchDecodeWithPagedKVCacheWorkEstimationDispatchedMLA(
       }
     }
 
-    return cudaSuccess;
+    return hipSuccess;
   });
 }
 
 template <uint32_t HEAD_DIM_CKV, uint32_t HEAD_DIM_KPE, uint32_t QO_TILE_LEN,
           typename AttentionVariant, typename Params>
-inline cudaError_t BatchDecodeWithPagedKVCacheWorkEstimationDispatchedMlaCuteSM80(
+inline hipError_t BatchDecodeWithPagedKVCacheWorkEstimationDispatchedMlaCuteSM80(
     bool& split_kv, uint32_t& max_grid_size, uint32_t& max_num_pages_per_batch,
     uint32_t& new_batch_size, uint32_t& gdy_, uint32_t batch_size,
     typename Params::IdType* kv_indptr_h, const uint32_t num_qo_heads, const uint32_t page_size,
-    bool enable_cuda_graph, cudaStream_t stream) {
+    bool enable_cuda_graph, hipStream_t stream) {
   using DTypeKV = typename Params::DTypeKV;
   using IdType = typename Params::IdType;
 
@@ -296,12 +296,12 @@ inline cudaError_t BatchDecodeWithPagedKVCacheWorkEstimationDispatchedMlaCuteSM8
   int num_blocks_per_sm;
   int num_sm = 0;
   int dev_id = 0;
-  FLASHINFER_CUDA_CALL(cudaGetDevice(&dev_id));
-  FLASHINFER_CUDA_CALL(cudaDeviceGetAttribute(&num_sm, cudaDevAttrMultiProcessorCount, dev_id));
+  FLASHINFER_HIP_CALL(cudaGetDevice(&dev_id));
+  FLASHINFER_HIP_CALL(hipDeviceGetAttribute(&num_sm, hipDeviceAttributeMultiprocessorCount, dev_id));
 
-  // FLASHINFER_CUDA_CALL(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&num_blocks_per_sm, kernel,
+  // FLASHINFER_HIP_CALL(hipOccupancyMaxActiveBlocksPerMultiprocessor(&num_blocks_per_sm, kernel,
   //                                   num_threads, smem_size));
-  // fixme: num_blocks_per_sm is 0 derived from cudaOccupancyMaxActiveBlocksPerMultiprocessor at
+  // fixme: num_blocks_per_sm is 0 derived from hipOccupancyMaxActiveBlocksPerMultiprocessor at
   // times, and we fill smem with q-heads as many as possible, so num_blocks_per_sm should be 1
   num_blocks_per_sm = 1;
 
@@ -332,7 +332,7 @@ inline cudaError_t BatchDecodeWithPagedKVCacheWorkEstimationDispatchedMlaCuteSM8
     }
   }
 
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 /*!
@@ -423,18 +423,18 @@ struct DecodePlanInfo {
 
 template <uint32_t HEAD_DIM, PosEncodingMode POS_ENCODING_MODE, typename AttentionVariant,
           typename Params, typename WorkEstimationFunc>
-inline cudaError_t DecodePlan(void* float_buffer, size_t float_workspace_size_in_bytes,
+inline hipError_t DecodePlan(void* float_buffer, size_t float_workspace_size_in_bytes,
                               void* int_buffer, void* page_locked_int_buffer,
                               size_t int_workspace_size_in_bytes, DecodePlanInfo& plan_info,
                               typename Params::IdType* indptr_h, uint32_t batch_size,
                               uint32_t num_qo_heads, uint32_t page_size, bool enable_cuda_graph,
-                              cudaStream_t stream, WorkEstimationFunc work_estimation_func) {
+                              hipStream_t stream, WorkEstimationFunc work_estimation_func) {
   using DTypeO = typename Params::DTypeO;
   using IdType = typename Params::IdType;
   bool split_kv;
   uint32_t max_grid_size, kv_chunk_size_in_pages, new_batch_size, gdy;
 
-  FLASHINFER_CUDA_CALL(work_estimation_func(split_kv, max_grid_size, kv_chunk_size_in_pages,
+  FLASHINFER_HIP_CALL(work_estimation_func(split_kv, max_grid_size, kv_chunk_size_in_pages,
                                             new_batch_size, gdy, batch_size, indptr_h, num_qo_heads,
                                             page_size, enable_cuda_graph, stream));
   size_t padded_batch_size;
@@ -486,9 +486,9 @@ inline cudaError_t DecodePlan(void* float_buffer, size_t float_workspace_size_in
 
   size_t num_bytes_to_copy = int_allocator.num_allocated_bytes();
 
-  FLASHINFER_CUDA_CALL(cudaMemcpyAsync(int_buffer, page_locked_int_buffer, num_bytes_to_copy,
-                                       cudaMemcpyHostToDevice, stream));
-  return cudaSuccess;
+  FLASHINFER_HIP_CALL(hipMemcpyAsync(int_buffer, page_locked_int_buffer, num_bytes_to_copy,
+                                       hipMemcpyHostToDevice, stream));
+  return hipSuccess;
 }
 
 template <typename IdType>
@@ -691,7 +691,7 @@ struct PrefillPlanInfo {
 };
 
 template <typename IdType>
-inline cudaError_t PrefillPlan(void* float_buffer, size_t float_workspace_size_in_bytes,
+inline hipError_t PrefillPlan(void* float_buffer, size_t float_workspace_size_in_bytes,
                                void* int_buffer, void* page_locked_int_buffer,
                                size_t int_workspace_size_in_bytes, PrefillPlanInfo& plan_info,
                                IdType* qo_indptr_h, IdType* kv_indptr_h, uint32_t total_num_rows,
@@ -701,7 +701,7 @@ inline cudaError_t PrefillPlan(void* float_buffer, size_t float_workspace_size_i
                                int32_t fixed_split_size, bool disable_split_kv,
                                int64_t num_colocated_ctas,  // for POD attention, limit prefill
                                                             // splits by #colocated decode CTAs
-                               cudaStream_t stream) {
+                               hipStream_t stream) {
   if (num_qo_heads % num_kv_heads != 0) {
     std::ostringstream err_msg;
     err_msg << "num_qo_heads " << num_qo_heads << " should be divisible by num_kv_heads "
@@ -712,8 +712,8 @@ inline cudaError_t PrefillPlan(void* float_buffer, size_t float_workspace_size_i
   // step 0: get the number of SMs
   int num_sm = 0;
   int dev_id = 0;
-  FLASHINFER_CUDA_CALL(cudaGetDevice(&dev_id));
-  FLASHINFER_CUDA_CALL(cudaDeviceGetAttribute(&num_sm, cudaDevAttrMultiProcessorCount, dev_id));
+  FLASHINFER_HIP_CALL(cudaGetDevice(&dev_id));
+  FLASHINFER_HIP_CALL(hipDeviceGetAttribute(&num_sm, hipDeviceAttributeMultiprocessorCount, dev_id));
   int num_blocks_per_sm = 2;
   int64_t available_ctas = static_cast<int64_t>(num_blocks_per_sm) * num_sm - num_colocated_ctas;
   int max_grid_size = static_cast<int>(std::max<int64_t>(0, available_ctas));
@@ -790,10 +790,10 @@ inline cudaError_t PrefillPlan(void* float_buffer, size_t float_workspace_size_i
   }
 
   size_t num_bytes_to_copy = int_allocator.num_allocated_bytes();
-  FLASHINFER_CUDA_CALL(cudaMemcpyAsync(int_buffer, page_locked_int_buffer, num_bytes_to_copy,
-                                       cudaMemcpyHostToDevice, stream));
+  FLASHINFER_HIP_CALL(hipMemcpyAsync(int_buffer, page_locked_int_buffer, num_bytes_to_copy,
+                                       hipMemcpyHostToDevice, stream));
 
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 inline float cost_function(int qo_len, int kv_len) { return 2 * float(qo_len) + kv_len; }
@@ -867,13 +867,13 @@ struct PrefillPlanSM90Info {
 };
 
 template <typename IdType>
-inline cudaError_t PrefillSM90Plan(
+inline hipError_t PrefillSM90Plan(
     void* float_buffer, size_t float_workspace_size_in_bytes, void* int_buffer,
     void* page_locked_int_buffer, size_t int_workspace_size_in_bytes,
     PrefillPlanSM90Info& plan_info, IdType* qo_indptr_h, IdType* kv_indptr_h, IdType* kv_len_arr_h,
     uint32_t total_num_rows, uint32_t batch_size, uint32_t num_qo_heads, uint32_t num_kv_heads,
     uint32_t head_dim_qk, uint32_t head_dim_vo, uint32_t page_size, bool causal,
-    bool enable_cuda_graph, uint32_t sizeof_dtype_o, cudaStream_t stream) {
+    bool enable_cuda_graph, uint32_t sizeof_dtype_o, hipStream_t stream) {
   if (num_qo_heads % num_kv_heads != 0) {
     std::ostringstream err_msg;
     err_msg << "num_qo_heads " << num_qo_heads << " should be divisible by num_kv_heads "
@@ -907,10 +907,10 @@ inline cudaError_t PrefillSM90Plan(
   }
 
   int device = 0;
-  FLASHINFER_CUDA_CALL(cudaGetDevice(&device));
+  FLASHINFER_HIP_CALL(cudaGetDevice(&device));
   int num_sm90_ctas = 0;
-  FLASHINFER_CUDA_CALL(
-      cudaDeviceGetAttribute(&num_sm90_ctas, cudaDevAttrMultiProcessorCount, device));
+  FLASHINFER_HIP_CALL(
+      hipDeviceGetAttribute(&num_sm90_ctas, hipDeviceAttributeMultiprocessorCount, device));
 
   MinHeap cta_cost_heap(num_sm90_ctas);
   std::vector<std::vector<IdType>> cta_qo_tile_indices(num_sm90_ctas, std::vector<IdType>()),
@@ -1013,9 +1013,9 @@ inline cudaError_t PrefillSM90Plan(
   std::copy(batch_indices_vec.begin(), batch_indices_vec.end(), batch_indices_h);
 
   size_t num_bytes_to_copy = int_allocator.num_allocated_bytes();
-  FLASHINFER_CUDA_CALL(cudaMemcpyAsync(int_buffer, page_locked_int_buffer, num_bytes_to_copy,
-                                       cudaMemcpyHostToDevice, stream));
-  return cudaSuccess;
+  FLASHINFER_HIP_CALL(hipMemcpyAsync(int_buffer, page_locked_int_buffer, num_bytes_to_copy,
+                                       hipMemcpyHostToDevice, stream));
+  return hipSuccess;
 }
 
 template <uint32_t NUM_TASKS>
@@ -1100,22 +1100,22 @@ struct HolisticPlanInfo {
 };
 
 template <typename IdType>
-inline cudaError_t TwoStageHolisticPlan(void* float_buffer, size_t float_workspace_size_in_bytes,
+inline hipError_t TwoStageHolisticPlan(void* float_buffer, size_t float_workspace_size_in_bytes,
                                         void* int_buffer, void* page_locked_int_buffer,
                                         size_t int_workspace_size_in_bytes,
                                         HolisticPlanInfo<2>& plan_info, IdType* qo_indptr_h,
                                         IdType* kv_indptr_h, IdType* kv_len_arr_h,
                                         uint32_t batch_size, uint32_t num_qo_heads,
                                         uint32_t num_kv_heads, uint32_t head_dim, bool causal,
-                                        cudaStream_t stream) {
+                                        hipStream_t stream) {
   constexpr uint32_t NUM_TASKS = 2;
   const uint32_t CTA_TILE_Q_SIZES[NUM_TASKS] = {128, 16};
   int num_sm = 0;
   int dev_id = 0;
 
   uint32_t gqa_group_size = num_qo_heads / num_kv_heads;
-  FLASHINFER_CUDA_CALL(cudaGetDevice(&dev_id));
-  FLASHINFER_CUDA_CALL(cudaDeviceGetAttribute(&num_sm, cudaDevAttrMultiProcessorCount, dev_id));
+  FLASHINFER_HIP_CALL(cudaGetDevice(&dev_id));
+  FLASHINFER_HIP_CALL(hipDeviceGetAttribute(&num_sm, hipDeviceAttributeMultiprocessorCount, dev_id));
 
   if (head_dim >= 256) {
     // NOTE (Yilong): optimize this code path
@@ -1354,8 +1354,8 @@ inline cudaError_t TwoStageHolisticPlan(void* float_buffer, size_t float_workspa
                          num_expand_qo_len_vec);
 
   size_t num_bytes_to_copy = int_allocator.num_allocated_bytes();
-  FLASHINFER_CUDA_CALL(cudaMemcpyAsync(int_buffer, page_locked_int_buffer, num_bytes_to_copy,
-                                       cudaMemcpyHostToDevice, stream));
+  FLASHINFER_HIP_CALL(hipMemcpyAsync(int_buffer, page_locked_int_buffer, num_bytes_to_copy,
+                                       hipMemcpyHostToDevice, stream));
   constexpr size_t sizeof_dtype_o = 2;  // NOTE (Yilong): assume fp16
 
   // Note(Yilong): times num_kv_heads as it is not counted in partial_o_nnz
@@ -1365,7 +1365,7 @@ inline cudaError_t TwoStageHolisticPlan(void* float_buffer, size_t float_workspa
   plan_info.partial_lse_offset = float_allocator.aligned_alloc_offset(
       max_num_kv_splits * sizeof(float) * num_kv_heads, 16, "holistic_partial_lse");
 
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 struct MLAPlanInfo {
@@ -1437,16 +1437,16 @@ struct MLAPlanInfo {
 };
 
 template <typename IdType>
-inline cudaError_t MLAPlan(void* float_buffer, size_t float_workspace_size_in_bytes,
+inline hipError_t MLAPlan(void* float_buffer, size_t float_workspace_size_in_bytes,
                            void* int_buffer, void* page_locked_int_buffer,
                            size_t int_workspace_size_in_bytes, MLAPlanInfo& plan_info,
                            IdType* qo_indptr_h, IdType* kv_indptr_h, IdType* kv_len_arr_h,
                            uint32_t batch_size, uint32_t num_heads, uint32_t head_dim_o,
-                           bool causal, cudaStream_t stream) {
+                           bool causal, hipStream_t stream) {
   int num_sm = 0;
   int dev_id = 0;
-  FLASHINFER_CUDA_CALL(cudaGetDevice(&dev_id));
-  FLASHINFER_CUDA_CALL(cudaDeviceGetAttribute(&num_sm, cudaDevAttrMultiProcessorCount, dev_id));
+  FLASHINFER_HIP_CALL(cudaGetDevice(&dev_id));
+  FLASHINFER_HIP_CALL(hipDeviceGetAttribute(&num_sm, hipDeviceAttributeMultiprocessorCount, dev_id));
 
   // step 0. determine the number of blocks in x and y dimensions
   int accum_packed_qo_len = 0;
@@ -1505,7 +1505,7 @@ inline cudaError_t MLAPlan(void* float_buffer, size_t float_workspace_size_in_by
     return ceil_div(x, 256) * 256;
   };
 
-  int kv_len_limit = f(std::max(ceil_div(total_kv_lens, num_clusters), 1L));
+  int kv_len_limit = f(std::max(ceil_div(total_kv_lens, num_clusters), 1LL));
 
   // step 1. load-balancing scheduling algorithm
   MinHeap cluster_cost_heap(num_clusters);
@@ -1693,8 +1693,8 @@ inline cudaError_t MLAPlan(void* float_buffer, size_t float_workspace_size_in_by
   std::copy(work_indptr_vec.begin(), work_indptr_vec.end(), cluster_work_indptr_h);
 
   size_t num_bytes_to_copy = int_allocator.num_allocated_bytes();
-  FLASHINFER_CUDA_CALL(cudaMemcpyAsync(int_buffer, page_locked_int_buffer, num_bytes_to_copy,
-                                       cudaMemcpyHostToDevice, stream));
+  FLASHINFER_HIP_CALL(hipMemcpyAsync(int_buffer, page_locked_int_buffer, num_bytes_to_copy,
+                                       hipMemcpyHostToDevice, stream));
 
   constexpr size_t sizeof_dtype_o = 2;
   AlignedAllocator float_allocator(float_buffer, float_workspace_size_in_bytes);
@@ -1703,8 +1703,11 @@ inline cudaError_t MLAPlan(void* float_buffer, size_t float_workspace_size_in_by
   plan_info.partial_lse_offset = float_allocator.aligned_alloc_offset(
       2 * num_clusters * cluster_tile_q * sizeof(float), 16, "mla_partial_lse");
 
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 }  // namespace flashinfer
 #endif  // FLASHINFER_ATTENTION_SCHEDULER_CUH_
+
+
+

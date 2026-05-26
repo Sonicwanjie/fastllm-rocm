@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2024 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +16,7 @@
 #ifndef FLASHINFER_CUTLASS_UTILS_CUH_
 #define FLASHINFER_CUTLASS_UTILS_CUH_
 
-#include <cuda_fp8.h>
+#include <hip/hip_fp8.h>
 
 #include "cute/tensor.hpp"
 #include "cutlass/cutlass.h"
@@ -43,7 +43,7 @@
 #include "cutlass/util/tensor_view_io.h"
 #if defined(FLASHINFER_ENABLE_FP4_E2M1)
 #if (__CUDACC_VER_MAJOR__ * 1000 + __CUDACC_VER_MINOR__ * 10 >= 12080)
-#include <cuda_fp4.h>
+// #include <cuda_fp4.h>  // FP4 not supported on HIP
 #endif
 #endif
 
@@ -109,3 +109,4 @@ void compileTimeDebug(T&&) {
 }  // namespace flashinfer
 
 #endif  // FLASHINFER_CUTLASS_UTILS_CUH_
+

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2023 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,10 +16,10 @@
 #ifndef FLASHINFER_MMA_CUH_
 #define FLASHINFER_MMA_CUH_
 
-#include <cuda_bf16.h>
-#include <cuda_fp16.h>
-#include <cuda_fp8.h>
-#include <cuda_runtime.h>
+#include <hip/hip_bfloat16.h>
+#include <hip/hip_fp16.h>
+#include <hip/hip_fp8.h>
+#include <hip/hip_runtime.h>
 
 #include <type_traits>
 
@@ -703,3 +703,4 @@ __device__ __forceinline__ void mma_sync_m16n16k16_row_col_f16f16f16(uint32_t* C
 }  // namespace flashinfer
 
 #endif  // FLASHINFER_MMA_CUH_
+

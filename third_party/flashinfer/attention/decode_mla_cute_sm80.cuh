@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2025 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,10 +16,10 @@
 #ifndef FLASHINFER_DECODE_CUTE_SM80_CUH_
 #define FLASHINFER_DECODE_CUTE_SM80_CUH_
 #include <cooperative_groups.h>
-#include <cuda_bf16.h>
-#include <cuda_fp16.h>
-#include <cuda_fp8.h>
-#include <cuda_runtime.h>
+#include <hip/hip_bfloat16.h>
+#include <hip/hip_fp16.h>
+#include <hip/hip_fp8.h>
+#include <hip/hip_runtime.h>
 
 #include <iostream>
 
@@ -508,9 +508,9 @@ __global__ void BatchDecodeWithPagedKVCacheKernelMlaCuteSM80(Params params) {
 
 template <uint32_t HEAD_DIM_CKV, uint32_t HEAD_DIM_KPE, uint32_t QO_TILE_LEN,
           typename AttentionVariant, typename Params>
-cudaError_t BatchDecodeWithPagedKVCacheDispatchedMlaCuteSM80(Params params,
+hipError_t BatchDecodeWithPagedKVCacheDispatchedMlaCuteSM80(Params params,
                                                              typename Params::DTypeO* tmp_v,
-                                                             float* tmp_s, cudaStream_t stream) {
+                                                             float* tmp_s, hipStream_t stream) {
   using DTypeQ = typename Params::DTypeQ;
   using DTypeKV = typename Params::DTypeKV;
   using DTypeO = typename Params::DTypeO;
@@ -524,8 +524,8 @@ cudaError_t BatchDecodeWithPagedKVCacheDispatchedMlaCuteSM80(Params params,
   auto kernel =
       BatchDecodeWithPagedKVCacheKernelMlaCuteSM80<HEAD_DIM_CKV, HEAD_DIM_KPE, QO_TILE_LEN, Params>;
 
-  FLASHINFER_CUDA_CALL(
-      cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size));
+  FLASHINFER_HIP_CALL(
+      hipFuncSetAttribute(kernel, hipFuncAttributeMaxDynamicSharedMemorySize, smem_size));
 
   if (tmp_v == nullptr) {
     // do not use partition-kv kernel
@@ -533,7 +533,7 @@ cudaError_t BatchDecodeWithPagedKVCacheDispatchedMlaCuteSM80(Params params,
     dim3 nthrs(k_warps * 32);
     params.partition_kv = false;
     void* args[] = {(void*)&params};
-    FLASHINFER_CUDA_CALL(cudaLaunchKernel((void*)kernel, nblks, nthrs, args, smem_size, stream));
+    FLASHINFER_HIP_CALL(cudaLaunchKernel((void*)kernel, nblks, nthrs, args, smem_size, stream));
   } else {
     // use partition-kv kernel
     params.partition_kv = true;
@@ -544,15 +544,18 @@ cudaError_t BatchDecodeWithPagedKVCacheDispatchedMlaCuteSM80(Params params,
     void* args[] = {(void*)&params};
     dim3 nblks(padded_batch_size, gdy);
     dim3 nthrs(k_warps * 32);
-    FLASHINFER_CUDA_CALL(cudaLaunchKernel((void*)kernel, nblks, nthrs, args, smem_size, stream));
-    FLASHINFER_CUDA_CALL(VariableLengthMergeStates(tmp_v, tmp_s, params.o_indptr, o, lse,
+    FLASHINFER_HIP_CALL(cudaLaunchKernel((void*)kernel, nblks, nthrs, args, smem_size, stream));
+    FLASHINFER_HIP_CALL(VariableLengthMergeStates(tmp_v, tmp_s, params.o_indptr, o, lse,
                                                    params.paged_kv.batch_size, nullptr,
                                                    num_qo_heads, HEAD_DIM_CKV, stream));
   }
 
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 }  // namespace flashinfer
 
 #endif  // FLASHINFER_DECODE_CUTE_SM80_CUH_
+
+
+

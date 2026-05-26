@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2025 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,10 +38,10 @@ namespace gemm {
 // SM120 uses Cooperative schedule with 128x128x128 tile shape
 template <int ScaleGranularityM, int ScaleGranularityN, int ScaleGranularityK, bool ScaleMajorK,
           typename DTypeIn, typename DTypeOut>
-cudaError_t CutlassGroupwiseScaledGEMMSM120(void* float_buffer, size_t float_buffer_size_in_bytes,
+hipError_t CutlassGroupwiseScaledGEMMSM120(void* float_buffer, size_t float_buffer_size_in_bytes,
                                             DTypeIn* A_ptr, DTypeIn* B_ptr, float* SFA_ptr,
                                             float* SFB_ptr, DTypeOut* D_ptr, int m, int n, int k,
-                                            int l, cudaStream_t stream) {
+                                            int l, hipStream_t stream) {
   // SM120 only supports these specific scale granularities
   static_assert(ScaleGranularityM == 1 || ScaleGranularityM == 128,
                 "SM120 only supports ScaleGranularityM = 1 or 128");
@@ -172,12 +172,12 @@ cudaError_t CutlassGroupwiseScaledGEMMSM120(void* float_buffer, size_t float_buf
   }
 
   // Sync to ensure kernel completes
-  cudaError_t cuda_err = cudaStreamSynchronize(stream);
-  if (cuda_err != cudaSuccess) {
+  hipError_t cuda_err = cudaStreamSynchronize(stream);
+  if (cuda_err != hipSuccess) {
     return cuda_err;
   }
 
-  return cudaSuccess;
+  return hipSuccess;
 #else
   return cudaErrorNotSupported;
 #endif
@@ -187,3 +187,4 @@ cudaError_t CutlassGroupwiseScaledGEMMSM120(void* float_buffer, size_t float_buf
 }  // namespace flashinfer
 
 #endif  // FLASHINFER_GEMM_GEMM_GROUPWISE_SM120_CUH_
+

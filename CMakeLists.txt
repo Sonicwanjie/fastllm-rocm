@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+﻿cmake_minimum_required(VERSION 3.5)
 
 project(fastllm LANGUAGES CXX)
 
@@ -286,38 +286,61 @@ endif()
 if(USE_ROCM)
     list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/third_party/hipify_torch/cmake")
     include(Hipify)
+    set(CMAKE_HIP_STANDARD 17)
+    set(CMAKE_HIP_STANDARD_REQUIRED ON)
     enable_language(HIP)
-
     # remove target hip dirs first
-    EXECUTE_PROCESS(COMMAND rm -rf ${PROJECT_SOURCE_DIR}/src/devices/hip)
-    EXECUTE_PROCESS(COMMAND rm -rf ${PROJECT_SOURCE_DIR}/src/devices/multihip)
+    IF(EXISTS ${PROJECT_SOURCE_DIR}/src/devices/hip)
+        EXECUTE_PROCESS(COMMAND ${CMAKE_COMMAND} -E remove_directory ${PROJECT_SOURCE_DIR}/src/devices/hip)
+    ENDIF()
+    IF(EXISTS ${PROJECT_SOURCE_DIR}/src/devices/multihip)
+        EXECUTE_PROCESS(COMMAND ${CMAKE_COMMAND} -E remove_directory ${PROJECT_SOURCE_DIR}/src/devices/multihip)
+    ENDIF()
     hipify(CUDA_SOURCE_DIR ${PROJECT_SOURCE_DIR}/src/devices/cuda HIP_SOURCE_DIR "${PROJECT_SOURCE_DIR}/src/devices/hip")
     hipify(CUDA_SOURCE_DIR ${PROJECT_SOURCE_DIR}/src/devices/multicuda HIP_SOURCE_DIR "${PROJECT_SOURCE_DIR}/src/devices/multihip")
+    # Post-hipify: replace CUDA headers with HIP equivalents
+    execute_process(COMMAND python ${CMAKE_CURRENT_SOURCE_DIR}/fix_hip_includes.py WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+    include_directories(include/cuda_compat)
     include_directories(include/devices/cuda)
     include_directories(include/devices/multicuda)
     set(FASTLLM_CUDA_SOURCES src/devices/cuda/cudadevice.cpp src/devices/cuda/cudadevicebatch.cpp 
-        src/devices/hip/fastllm-hip.hip src/devices/hip/fastllm-ggml-hip.hip 
-        src/devices/multicuda/multicudadevice.cpp src/devices/multihip/fastllm-multihip.hip)
-    add_compile_definitions(USE_ROCM)
+        src/devices/hip/fastllm-hip.hip src/devices/hip/fastllm-ggml-hip.hip
+        src/devices/hip/attention/fastllm-attention.hip
+        src/devices/hip/linear/fastllm-linear-fp32.hip src/devices/hip/linear/fastllm-linear-fp16.hip src/devices/hip/linear/fastllm-linear-bf16.hip
+        src/devices/hip/linear/fastllm-linear-fp8.hip src/devices/hip/linear/fastllm-linear-int4.hip src/devices/hip/linear/fastllm-linear-int4group.hip
+        src/devices/hip/linear/fastllm-linear-int4nozero.hip src/devices/hip/linear/fastllm-linear-int8.hip
+        src/devices/hip/models/deepseekv4-kernels.hip src/devices/hip/moe/fastllm-moe-fp8.hip)
     add_compile_definitions(USE_CUDA)
     if (DEFINED $ENV{ROCM_PATH})
         set(ROCM_PATH $ENV{ROCM_PATH})
-    else()
+    elseif(NOT ROCM_PATH)
         set(ROCM_PATH /opt/rocm)
     endif()
     set(CMAKE_HIP_COMPILER_ROCM_ROOT ${ROCM_PATH})
-    set(CMAKE_CXX_COMPILER "${CMAKE_HIP_COMPILER_ROCM_ROOT}/bin/amdclang++")
+    # Don't override CXX compiler on Windows - let CMake use the configured one
+    if(NOT WIN32)
+        set(CMAKE_CXX_COMPILER "${CMAKE_HIP_COMPILER_ROCM_ROOT}/bin/amdclang++")
+    endif()
     message(STATUS "CMAKE_HIP_COMPILER_ROCM_ROOT: ${CMAKE_HIP_COMPILER_ROCM_ROOT}")
     message(STATUS "CMAKE_HIP_COMPILER: ${CMAKE_HIP_COMPILER}")
     message(STATUS "CMAKE_CXX_COMPILER: ${CMAKE_CXX_COMPILER}")
     
-    set(CMAKE_PREFIX_PATH ${ROCM_PATH})
+    list(APPEND CMAKE_PREFIX_PATH ${ROCM_PATH})
     find_package(hip REQUIRED) 
     find_package(hipblas REQUIRED)
     find_package(rocprim REQUIRED)
     list(APPEND FASTLLM_LINKED_LIBS hip::device roc::hipblas roc::rocprim)
     set(CMAKE_HIP_ARCHITECTURES ${ROCM_ARCH})
     add_compile_definitions(HIPBLAS_V2)
+    add_compile_definitions(NOMINMAX)
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+    add_compile_definitions(HIP_NO_TENSOR_CORE)
+    add_compile_definitions(USE_ROCM)
+    add_compile_definitions(__HIP__=1)
+    add_compile_definitions(USE_CUDA)
+    # Pass ROCm device library path to compiler (needed for both CXX and HIP rules)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --rocm-path=${ROCM_PATH} --rocm-device-lib-path=${ROCM_PATH}/lib/llvm/amdgcn/bitcode")
+    set(CMAKE_HIP_FLAGS "${CMAKE_HIP_FLAGS} --rocm-path=${ROCM_PATH} --rocm-device-lib-path=${ROCM_PATH}/lib/llvm/amdgcn/bitcode -D_DLL -D_MT -Xclang --dependent-lib=msvcrt" CACHE STRING "" FORCE)
 
     # Check if gfx906(MI50) is in the architecture list
     set(HAS_MI50_IN_TARGETS FALSE)
@@ -399,6 +422,25 @@ if (PY_API)
     target_link_libraries(pyfastllm PUBLIC pybind11::module ${FASTLLM_LINKED_LIBS})
     pybind11_extension(pyfastllm)
 else()
+# Ensure ggml/CPU-only files are compiled as CXX even when HIP is active
+if(USE_ROCM)
+    # Force C++ mode for CPU-only ggml files
+    # CMake 4.3 injects -x hip into CXX flags when HIP/CXX compilers match
+    set_source_files_properties(
+        third_party/gguf/ggml-iqk.cpp
+        third_party/gguf/ggml-quant.cpp
+        third_party/gguf/gguf.cpp
+        third_party/gguf/ggml-dequantize.cpp
+        third_party/gguf/gguf-adapter.cpp
+        PROPERTIES LANGUAGE CXX)
+    # CPU-only ggml files need x86 SIMD, disable HIP defines and enable AVX2
+    set_source_files_properties(
+        third_party/gguf/ggml-iqk.cpp
+        third_party/gguf/ggml-quant.cpp
+        PROPERTIES COMPILE_FLAGS "-x c++ -mavx2 -mfma -mf16c -U__HIP_PLATFORM_AMD__ -U__HIP__")
+endif()
+
+
 add_library(fastllm OBJECT
             ${FASTLLM_CXX_SOURCES}
             ${FASTLLM_CUDA_SOURCES}
@@ -489,8 +531,8 @@ if (${CMAKE_HOST_WIN32})
             COMMAND ${CMAKE_COMMAND} -E make_directory tools/ftllm
             COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/tools/fastllm_pytools ${CMAKE_BINARY_DIR}/tools/ftllm/.
             COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/tools/scripts ${CMAKE_BINARY_DIR}/tools/.
-            COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_BINARY_DIR}/$(Configuration)/fastllm_tools.dll ${CMAKE_BINARY_DIR}/tools/ftllm/.
-            COMMAND ${CMAKE_COMMAND} -E remove ${CMAKE_BINARY_DIR}/$(Configuration)/fastllm_tools.dll
+            COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:fastllm_tools> ${CMAKE_BINARY_DIR}/tools/ftllm/.
+            COMMAND ${CMAKE_COMMAND} -E remove $<TARGET_FILE:fastllm_tools>
             COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_BINARY_DIR}/build_info.json ${CMAKE_BINARY_DIR}/tools/ftllm/.
     )
 else()

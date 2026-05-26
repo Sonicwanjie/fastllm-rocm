@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,8 +22,8 @@
 #else
 #include <cooperative_groups.h>
 #endif
-#include <cuda_fp16.h>
-#include <cuda_runtime.h>
+#include <hip/hip_fp16.h>
+#include <hip/hip_runtime.h>
 #include <curand_kernel.h>
 #include <float.h>
 
@@ -378,3 +378,4 @@ __device__ __forceinline__ half clamp_inf_for_half(float const input) {
 
 }  // namespace common
 }  // namespace tensorrt_llm
+

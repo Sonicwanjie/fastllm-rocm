@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2023 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +16,7 @@
 #ifndef FLASHINFER_ATTENTION_HOPPER_HEADER_CUH_
 #define FLASHINFER_ATTENTION_HOPPER_HEADER_CUH_
 #include <cuda.h>
-#include <cuda_runtime.h>
+#include <hip/hip_runtime.h>
 #include <cutlass/arch/reg_reconfig.h>
 #include <cutlass/cutlass.h>
 
@@ -276,3 +276,4 @@ __device__ __forceinline__ void warpgroup_fence_frag(float* frag) {
 };  // namespace flashinfer
 
 #endif  // FLASHINFER_ATTENTION_HOPPER_HEADER_CUH_
+

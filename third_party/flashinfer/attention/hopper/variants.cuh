@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2024 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +16,7 @@
 // NOTE(Zihao): we should merge this with include/flashinfer/attention/variants.cuh in the future
 #ifndef FLASHINFER_ATTENTION_HOPPER_VARIANTS_CUH_
 #define FLASHINFER_ATTENTION_HOPPER_VARIANTS_CUH_
-#include <cuda_runtime.h>
+#include <hip/hip_runtime.h>
 
 #include "../../math.cuh"
 #include "attention_updater.cuh"
@@ -106,3 +106,4 @@ using DefaultFP8Attention = StandardFP8Attention;
 }  // namespace flashinfer
 
 #endif  // FLASHINFER_ATTENTION_HOPPER_VARIANTS_CUH_
+

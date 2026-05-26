@@ -1,4 +1,4 @@
-//
+﻿//
 // Created by huangyuyang on 8/2/24.
 //
 
@@ -18,6 +18,11 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#ifdef _WIN32
+#define strcasecmp _stricmp
+#else
+#include <strings.h>
+#endif
 #include <map>
 #include <memory>
 #include <mutex>
@@ -400,7 +405,7 @@ namespace fastllm {
         }
     }
 
-    // 确保 data 在指定设备上具有 REPLICATED 布局；已有完整副本时直接复用，否则重建并按需拷贝数据。
+    // ç¡®ä¿ data åœ¨æŒ‡å®šè®¾å¤‡ä¸Šå…·æœ‰ REPLICATED å¸ƒå±€ï¼›å·²æœ‰å®Œæ•´å‰¯æœ¬æ—¶ç›´æŽ¥å¤ç”¨ï¼Œå¦åˆ™é‡å»ºå¹¶æŒ‰éœ€æ‹·è´æ•°æ®ã€‚
     static void EnsureReplicatedMultiCudaTensor(fastllm::Data &data, const std::vector <int> &devices, bool copyData) {
         if (HasReplicatedMultiCudaTensor(data, devices)) {
             SyncReplicatedCpuIntData(data, devices);
@@ -1189,15 +1194,15 @@ namespace fastllm {
         }
     };
 
-    // Sharded 输入下两阶段 RMSNormPart:
-    //   阶段 A: 每张卡计算本地 sum(x^2) 到 float 缓冲 (size = outer)
-    //   阶段 B: 等待 NCCL all-reduce(在调度层做)聚合好的全局 sum 后,使用 partChannelsGlobal 做 normalize。
-    // 该 Op 只负责"算出 sum2 到 sumBuffer 中"。
+    // Sharded è¾“å…¥ä¸‹ä¸¤é˜¶æ®µ RMSNormPart:
+    //   é˜¶æ®µ A: æ¯å¼ å¡è®¡ç®—æœ¬åœ° sum(x^2) åˆ° float ç¼“å†² (size = outer)
+    //   é˜¶æ®µ B: ç­‰å¾… NCCL all-reduce(åœ¨è°ƒåº¦å±‚åš)èšåˆå¥½çš„å…¨å±€ sum åŽ,ä½¿ç”¨ partChannelsGlobal åš normalizeã€‚
+    // è¯¥ Op åªè´Ÿè´£"ç®—å‡º sum2 åˆ° sumBuffer ä¸­"ã€‚
     struct MultiCudaRMSNormPartSum2Op : MultiThreadBaseOp {
-        Data *input;                 // 本卡的 local input(已经只持有部分通道)
-        float *sumBuffer;            // device buffer,长度为 outer
-        int localStart;              // 在 local input 上的起始通道(可能不是 0)
-        int localEnd;                // 在 local input 上的终止通道
+        Data *input;                 // æœ¬å¡çš„ local input(å·²ç»åªæŒæœ‰éƒ¨åˆ†é€šé“)
+        float *sumBuffer;            // device buffer,é•¿åº¦ä¸º outer
+        int localStart;              // åœ¨ local input ä¸Šçš„èµ·å§‹é€šé“(å¯èƒ½ä¸æ˜¯ 0)
+        int localEnd;                // åœ¨ local input ä¸Šçš„ç»ˆæ­¢é€šé“
         int deviceId;
 
         MultiCudaRMSNormPartSum2Op(Data *input, float *sumBuffer,
@@ -1218,7 +1223,7 @@ namespace fastllm {
         }
     };
 
-    // 对 sumBuffer 做 NCCL all-reduce(SUM)
+    // å¯¹ sumBuffer åš NCCL all-reduce(SUM)
     struct MultiCudaAllReduceFloatOp : MultiThreadBaseOp {
         float *buffer;
         int count;
@@ -1234,7 +1239,7 @@ namespace fastllm {
         }
     };
 
-    // 阶段 B: 用聚合好的 sumBuffer 应用 normalize
+    // é˜¶æ®µ B: ç”¨èšåˆå¥½çš„ sumBuffer åº”ç”¨ normalize
     struct MultiCudaRMSNormPartApplyOp : MultiThreadBaseOp {
         Data *input, *weight, *output;
         float *sumBuffer;
@@ -1323,7 +1328,7 @@ namespace fastllm {
         }
     }
 
-    // 对某一个算子进行形状推理
+    // å¯¹æŸä¸€ä¸ªç®—å­è¿›è¡Œå½¢çŠ¶æŽ¨ç†
     void MultiCudaDevice::Reshape(const std::string &opType, const DataDict &datas, const FloatDict &floatParams, const IntDict &intParams) {
         if (this->ops.find(opType) == this->ops.end()) {
             ((BaseDevice*)this->cudaDevice)->Reshape(opType, datas, floatParams, intParams);
@@ -1332,7 +1337,7 @@ namespace fastllm {
         }
     }
 
-    // 对某一个算子进行推理
+    // å¯¹æŸä¸€ä¸ªç®—å­è¿›è¡ŒæŽ¨ç†
     void MultiCudaDevice::Run(const std::string &opType, const DataDict &datas, const FloatDict &floatParams, const IntDict &intParams) {
         if (this->ops.find(opType) == this->ops.end()) {
             ((BaseDevice*)this->cudaDevice)->Run(opType, datas, floatParams, intParams);
@@ -1728,16 +1733,16 @@ namespace fastllm {
             SyncShardedLocalShapeFromRoot(output, devices);
         }
 
-        // 计算 outer(每张卡相同),用于 sumBuffer 长度
+        // è®¡ç®— outer(æ¯å¼ å¡ç›¸åŒ),ç”¨äºŽ sumBuffer é•¿åº¦
         long long outer = 1;
         for (int i = 0; i < (int)input.dims.size() - 1; i++) {
             outer *= input.dims[i];
         }
         int partChannelsGlobal = end - start;
 
-        // 决定是否需要跨卡聚合:仅当全局 [start, end) 真的跨越多张卡时才需要 NCCL all-reduce。
-        // 如果某张卡完全不持有 [start, end) 范围内的任何通道,则它的本地 sum2 应为 0;
-        // 如果只有一张卡同时持有完整的 [start, end),则可以走快速路径(等价于单卡 RMSNormPart)。
+        // å†³å®šæ˜¯å¦éœ€è¦è·¨å¡èšåˆ:ä»…å½“å…¨å±€ [start, end) çœŸçš„è·¨è¶Šå¤šå¼ å¡æ—¶æ‰éœ€è¦ NCCL all-reduceã€‚
+        // å¦‚æžœæŸå¼ å¡å®Œå…¨ä¸æŒæœ‰ [start, end) èŒƒå›´å†…çš„ä»»ä½•é€šé“,åˆ™å®ƒçš„æœ¬åœ° sum2 åº”ä¸º 0;
+        // å¦‚æžœåªæœ‰ä¸€å¼ å¡åŒæ—¶æŒæœ‰å®Œæ•´çš„ [start, end),åˆ™å¯ä»¥èµ°å¿«é€Ÿè·¯å¾„(ç­‰ä»·äºŽå•å¡ RMSNormPart)ã€‚
         std::vector <int> shardedDevices;
         bool needAllReduce = false;
         {
@@ -1764,13 +1769,13 @@ namespace fastllm {
             } else if (devicesWithRange == 1 && onlyDeviceLocalCount == partChannelsGlobal) {
                 needAllReduce = false;
             } else if (devicesWithRange == 1) {
-                // 唯一持有该范围的卡只持有部分通道,这种情况下也需要 NCCL(0 + local 仍要算全局)
+                // å”¯ä¸€æŒæœ‰è¯¥èŒƒå›´çš„å¡åªæŒæœ‰éƒ¨åˆ†é€šé“,è¿™ç§æƒ…å†µä¸‹ä¹Ÿéœ€è¦ NCCL(0 + local ä»è¦ç®—å…¨å±€)
                 needAllReduce = true;
             }
         }
 
         if (!needAllReduce) {
-            // 快速路径:一张卡持有完整 [start, end)。直接走旧逻辑。
+            // å¿«é€Ÿè·¯å¾„:ä¸€å¼ å¡æŒæœ‰å®Œæ•´ [start, end)ã€‚ç›´æŽ¥èµ°æ—§é€»è¾‘ã€‚
             std::vector <fastllm::MultiThreadBaseOp*> ops;
             ops.reserve(shardedDevices.size());
             for (int device : shardedDevices) {
@@ -1804,10 +1809,10 @@ namespace fastllm {
             return;
         }
 
-        // 慢路径(正确性优先):两阶段 + NCCL all-reduce
-        // 1) 在每张卡上分配 outer 大小的 float buffer,算本地 sum2
-        // 2) NCCL all-reduce 聚合到全局 sum2
-        // 3) 用全局 sum2 + partChannelsGlobal 在每张卡上 apply normalize
+        // æ…¢è·¯å¾„(æ­£ç¡®æ€§ä¼˜å…ˆ):ä¸¤é˜¶æ®µ + NCCL all-reduce
+        // 1) åœ¨æ¯å¼ å¡ä¸Šåˆ†é… outer å¤§å°çš„ float buffer,ç®—æœ¬åœ° sum2
+        // 2) NCCL all-reduce èšåˆåˆ°å…¨å±€ sum2
+        // 3) ç”¨å…¨å±€ sum2 + partChannelsGlobal åœ¨æ¯å¼ å¡ä¸Š apply normalize
         FastllmInitNccl(devices);
         std::map <int, float*> sumBuffers;
         for (int device : shardedDevices) {
@@ -1815,7 +1820,7 @@ namespace fastllm {
             sumBuffers[device] = (float*)FastllmCudaMalloc(sizeof(float) * (size_t)outer);
         }
 
-        // 阶段 A: 每张卡算本地 sum2
+        // é˜¶æ®µ A: æ¯å¼ å¡ç®—æœ¬åœ° sum2
         {
             std::vector <fastllm::MultiThreadBaseOp*> ops;
             ops.reserve(shardedDevices.size());
@@ -1844,7 +1849,7 @@ namespace fastllm {
             RunMultiCudaDeviceOpsAndDelete(shardedDevices, ops);
         }
 
-        // 阶段 NCCL: all-reduce sum buffers (SUM)
+        // é˜¶æ®µ NCCL: all-reduce sum buffers (SUM)
         {
             std::vector <fastllm::MultiThreadBaseOp*> ops;
             ops.reserve(shardedDevices.size());
@@ -1854,7 +1859,7 @@ namespace fastllm {
             RunMultiCudaDeviceOpsAndDelete(shardedDevices, ops);
         }
 
-        // 阶段 B: 用聚合后的 sumBuffer apply normalize
+        // é˜¶æ®µ B: ç”¨èšåˆåŽçš„ sumBuffer apply normalize
         {
             std::vector <fastllm::MultiThreadBaseOp*> ops;
             ops.reserve(shardedDevices.size());
@@ -1890,7 +1895,7 @@ namespace fastllm {
             RunMultiCudaDeviceOpsAndDelete(shardedDevices, ops);
         }
 
-        // 释放临时 buffer
+        // é‡Šæ”¾ä¸´æ—¶ buffer
         for (auto &kv : sumBuffers) {
             FastllmCudaSetDevice(kv.first);
             FastllmCudaFree(kv.second);
@@ -2878,7 +2883,7 @@ namespace fastllm {
     }
 
     struct MultiCudaDoMergeMLPOp : MultiThreadBaseOp {
-        uint8_t *oriCudaInput, *oriCpuInput; // 移除了 partOutput
+        uint8_t *oriCudaInput, *oriCpuInput; // ç§»é™¤äº† partOutput
         Data *input, *weight0, *bias0, *weight1, *bias1;
         Data *w1, *w2, *w3;
         Data *output;
@@ -2888,7 +2893,7 @@ namespace fastllm {
                             Data *input, Data *weight0, Data *bias0, Data *weight1, Data *bias1, 
                             Data *w1, Data *w2, Data *w3,
                             Data *output, int deviceId) : 
-                oriCudaInput(oriCudaInput), oriCpuInput(oriCpuInput), // 移除了 partOutput 初始化
+                oriCudaInput(oriCudaInput), oriCpuInput(oriCpuInput), // ç§»é™¤äº† partOutput åˆå§‹åŒ–
                 input(input), weight0(weight0), bias0(bias0), weight1(weight1), bias1(bias1), 
                 w1(w1), w2(w2), w3(w3), 
                 output(output), deviceId(deviceId) {}
@@ -4248,7 +4253,7 @@ auto st = std::chrono::system_clock::now();
                 output(output), deviceId(deviceId), gateType(MoeGateSwiglu) {}
 
         void Run() {
-            // 注意weights里面的值，真正要使用的是weights[x]->multiDeviceDatas[deviceId]
+            // æ³¨æ„weightsé‡Œé¢çš„å€¼ï¼ŒçœŸæ­£è¦ä½¿ç”¨çš„æ˜¯weights[x]->multiDeviceDatas[deviceId]
             input->Allocate();
             memcpy(input->cpuData, oriCpuInput, input->GetBytes());
 

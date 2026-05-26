@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2024 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,7 +15,7 @@
  */
 #ifndef FLASHINFER_ATTENTION_VARIANTS_CUH_
 #define FLASHINFER_ATTENTION_VARIANTS_CUH_
-#include <cuda_runtime.h>
+#include <hip/hip_runtime.h>
 
 #include <cstdint>
 #include <type_traits>
@@ -95,3 +95,4 @@ struct DefaultAttention : AttentionVariantBase {
 };  // namespace flashinfer
 
 #endif  // FLASHINFER_ATTENTION_VARIANTS_CUH_
+

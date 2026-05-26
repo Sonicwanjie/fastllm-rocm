@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2024 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,7 +17,7 @@
 #define FLASHINFER_GEMM_BMM_FP8_CUH_
 
 #include <cublasLt.h>
-#include <cuda_fp8.h>
+#include <hip/hip_fp8.h>
 
 #include <iostream>
 #include <memory>
@@ -141,7 +141,7 @@ template <typename AT, typename BT, typename DT>
 cublasStatus_t bmm_fp8_internal_cublaslt(void* workspace, size_t workspace_size_in_bytes,
                                          const AT* A, const BT* B, DT* D, int batch_size, int m,
                                          int n, int k, const float* A_scale, const float* B_scale,
-                                         cublasLtHandle_t lt_handle, cudaStream_t stream) {
+                                         cublasLtHandle_t lt_handle, hipStream_t stream) {
   const void* A_scale_ptr = static_cast<const void*>(A_scale);
   const void* B_scale_ptr = static_cast<const void*>(B_scale);
   auto matmul_desp = CuBlasLtMatmulDescriptor(CUBLAS_COMPUTE_32F, CUDA_R_32F);
@@ -201,3 +201,5 @@ cublasStatus_t bmm_fp8_internal_cublaslt(void* workspace, size_t workspace_size_
 }  // namespace flashinfer
 
 #endif  // FLASHINFER_GEMM_BMM_FP8_CUH_
+
+

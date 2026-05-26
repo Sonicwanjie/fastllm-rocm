@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2024, Jay Shah, Ganesh Bikshandi, Ying Zhang, Vijay Thakkar, Pradeep Ramani, Tri
  * Dao. Licensed under the BSD 3-Clause.
  *
@@ -8,7 +8,7 @@
 #define FLASHINFER_ATTENTION_HOPPER_FP8_PREFILL_SM90_CUH_
 
 #include <cuda.h>
-#include <cuda_device_runtime_api.h>
+// #include <cuda_device_runtime_api.h>
 #include <cutlass/arch/reg_reconfig.h>
 #include <cutlass/array.h>
 #include <cutlass/cutlass.h>
@@ -250,7 +250,7 @@ __global__ void __launch_bounds__(Ktraits::NUM_WARPS* cutlass::NumThreadsPerWarp
 }
 
 template <typename KernelTraits, bool LEFT_SLIDING_WINDOW, bool CAUSAL, typename Params>
-cudaError_t SingleFP8PrefillWithKVCacheKernelTraitsDispatched(Params& params, cudaStream_t stream) {
+hipError_t SingleFP8PrefillWithKVCacheKernelTraitsDispatched(Params& params, hipStream_t stream) {
   using DTypeQ = typename KernelTraits::DTypeQ;
   using DTypeKV = typename KernelTraits::DTypeKV;
   using DTypeO = typename KernelTraits::DTypeO;
@@ -295,27 +295,27 @@ cudaError_t SingleFP8PrefillWithKVCacheKernelTraitsDispatched(Params& params, cu
       (void*)FP8PrefillWithKVCacheKernel<CollectiveMainloop, CollectiveEpilogue, KernelTraits,
                                          LEFT_SLIDING_WINDOW, CAUSAL, Scheduler>;
   int smem_size = sizeof(typename KernelTraits::SharedStorage);
-  FLASHINFER_CUDA_CALL(
-      cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size));
+  FLASHINFER_HIP_CALL(
+      hipFuncSetAttribute(kernel, hipFuncAttributeMaxDynamicSharedMemorySize, smem_size));
 
   int device;
   cudaGetDevice(&device);
   int multiprocessor_count;
-  FLASHINFER_CUDA_CALL(
-      cudaDeviceGetAttribute(&multiprocessor_count, cudaDevAttrMultiProcessorCount, device));
+  FLASHINFER_HIP_CALL(
+      hipDeviceGetAttribute(&multiprocessor_count, hipDeviceAttributeMultiprocessorCount, device));
   dim3 grid_dims = Scheduler::get_grid_dim(scheduler_args, multiprocessor_count);
   static constexpr int num_ctas = KernelTraits::NUM_WARPS * 32;
   dim3 block_dims(num_ctas);
   void* args[] = {&mainloop_params, &epilogue_params, &scheduler_params};
-  FLASHINFER_CUDA_CALL(cudaLaunchKernel(kernel, grid_dims, block_dims, args, smem_size, stream));
+  FLASHINFER_HIP_CALL(cudaLaunchKernel(kernel, grid_dims, block_dims, args, smem_size, stream));
 
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 template <typename KernelTraits, bool LEFT_SLIDING_WINDOW, bool CAUSAL,
           bool SAME_SCHEDULE_FOR_ALL_HEADS, typename Params>
-cudaError_t BatchFP8PrefillWithPagedKVCacheKernelTraitsDispatched(Params& params,
-                                                                  cudaStream_t stream) {
+hipError_t BatchFP8PrefillWithPagedKVCacheKernelTraitsDispatched(Params& params,
+                                                                  hipStream_t stream) {
   using DTypeQ = typename KernelTraits::DTypeQ;
   using DTypeKV = typename KernelTraits::DTypeKV;
   using DTypeO = typename KernelTraits::DTypeO;
@@ -368,26 +368,26 @@ cudaError_t BatchFP8PrefillWithPagedKVCacheKernelTraitsDispatched(Params& params
       (void*)FP8PrefillWithKVCacheKernel<CollectiveMainloop, CollectiveEpilogue, KernelTraits,
                                          LEFT_SLIDING_WINDOW, CAUSAL, Scheduler>;
   int smem_size = sizeof(typename KernelTraits::SharedStorage);
-  FLASHINFER_CUDA_CALL(
-      cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size));
+  FLASHINFER_HIP_CALL(
+      hipFuncSetAttribute(kernel, hipFuncAttributeMaxDynamicSharedMemorySize, smem_size));
 
   int device;
   cudaGetDevice(&device);
   int multiprocessor_count;
-  FLASHINFER_CUDA_CALL(
-      cudaDeviceGetAttribute(&multiprocessor_count, cudaDevAttrMultiProcessorCount, device));
+  FLASHINFER_HIP_CALL(
+      hipDeviceGetAttribute(&multiprocessor_count, hipDeviceAttributeMultiprocessorCount, device));
   dim3 grid_dims = Scheduler::get_grid_dim(scheduler_args, multiprocessor_count);
   static constexpr int ctaSize = KernelTraits::NUM_WARPS * 32;
   dim3 block_dims(ctaSize);
   void* args[] = {&mainloop_params, &epilogue_params, &scheduler_params};
-  FLASHINFER_CUDA_CALL(cudaLaunchKernel(kernel, grid_dims, block_dims, args, smem_size, stream));
+  FLASHINFER_HIP_CALL(cudaLaunchKernel(kernel, grid_dims, block_dims, args, smem_size, stream));
 
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 template <uint32_t HEAD_DIM, MaskMode MASK_MODE, bool LEFT_SLIDING_WINDOW,
           typename AttentionVariant, typename Params>
-cudaError_t SingleFP8PrefillWithKVCacheDispatched(Params& params, cudaStream_t stream) {
+hipError_t SingleFP8PrefillWithKVCacheDispatched(Params& params, hipStream_t stream) {
   static_assert(cutlass::sizeof_bits_v<typename Params::DTypeQ> == 8);
   static_assert(cutlass::sizeof_bits_v<typename Params::DTypeKV> == 8);
   static_assert(HEAD_DIM == 64 || HEAD_DIM == 128 || HEAD_DIM == 256);
@@ -424,14 +424,14 @@ cudaError_t SingleFP8PrefillWithKVCacheDispatched(Params& params, cudaStream_t s
                                  typename Params::IdType, AttentionVariant>,
         LEFT_SLIDING_WINDOW, CAUSAL>(params, stream);
   }
-  cudaError_t status = cudaGetLastError();
+  hipError_t status = hipGetLastError();
   return status;
 }
 
 template <uint32_t HEAD_DIM, MaskMode MASK_MODE, bool LEFT_SLIDING_WINDOW,
           bool SAME_SCHEDULE_FOR_ALL_HEADS, typename AttentionVariant, typename Params>
-cudaError_t BatchFP8PrefillWithPagedKVCacheDispatched(Params& params, bool enable_pdl,
-                                                      cudaStream_t stream) {
+hipError_t BatchFP8PrefillWithPagedKVCacheDispatched(Params& params, bool enable_pdl,
+                                                      hipStream_t stream) {
   static_assert(HEAD_DIM == 64 || HEAD_DIM == 128 || HEAD_DIM == 256);
   if (MASK_MODE == MaskMode::kCustom) {
     return cudaErrorNotSupported;  // Not supported yet.
@@ -468,10 +468,13 @@ cudaError_t BatchFP8PrefillWithPagedKVCacheDispatched(Params& params, bool enabl
                                  typename Params::IdType, AttentionVariant>,
         LEFT_SLIDING_WINDOW, CAUSAL, SAME_SCHEDULE_FOR_ALL_HEADS>(params, stream);
   }
-  cudaError_t status = cudaGetLastError();
+  hipError_t status = hipGetLastError();
   return status;
 };
 
 }  // namespace flashinfer
 
 #endif  // FLASHINFER_ATTENTION_HOPPER_FP8_PREFILL_SM90_CUH_
+
+
+

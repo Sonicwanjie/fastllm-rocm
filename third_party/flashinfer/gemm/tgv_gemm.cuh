@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -44,9 +44,9 @@ using namespace cute;
   {                                        \
     gpuAssert2((ans), __FILE__, __LINE__); \
   }
-inline void gpuAssert2(cudaError_t code, const char* file, int line, bool abort = true) {
-  if (code != cudaSuccess) {
-    fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+inline void gpuAssert2(hipError_t code, const char* file, int line, bool abort = true) {
+  if (code != hipSuccess) {
+    fprintf(stderr, "GPUassert: %s %s %d\n", hipGetErrorString(code), file, line);
     if (abort) exit(code);
   }
 }
@@ -997,7 +997,7 @@ void tgv_gemm_host(
     bool pdl,
     int pdl_count = -1,  // which kblock count to do griddepcontrol.launch_dependents, default is
                          // griddepcontrol.launch_dependents at the end of DMA_A warp
-    cudaStream_t stream = 0) {
+    hipStream_t stream = 0) {
   Layout layout_A = make_layout_A<CTA_M, CTA_K, UmmaMajorA>(
       Gemm_M, Gemm_K, Gemm_L, stride_A_M, stride_A_K,
       stride_A_L);  // (M, K, L), where K or M is contiguous, other layout is free to choose
@@ -1273,7 +1273,7 @@ void tgv_gemm_host(
         &tgv_gemm_device<SMEMStorage, decltype(mA_tma), decltype(mB_tma), decltype(mC),
                          decltype(mBias), decltype(tma_atom_A), decltype(tma_atom_B),
                          decltype(tiled_mma), CTA_M, CTA_N, CTA_K, DMA_Stage, false>;
-    gpuErrChk(cudaFuncSetAttribute(*kernel_instance, cudaFuncAttributeMaxDynamicSharedMemorySize,
+    gpuErrChk(hipFuncSetAttribute(*kernel_instance, hipFuncAttributeMaxDynamicSharedMemorySize,
                                    smemBytes));
     gpuErrChk(cudaLaunchKernelEx(&config, kernel_instance, mA_tma, mB_tma, mC, mBias, tma_atom_A,
                                  tma_atom_B, tiled_mma, pdl_count));
@@ -1282,7 +1282,7 @@ void tgv_gemm_host(
         &tgv_gemm_device<SMEMStorage, decltype(mA_tma), decltype(mB_tma), decltype(mC),
                          decltype(mBias), decltype(tma_atom_A), decltype(tma_atom_B),
                          decltype(tiled_mma), CTA_M, CTA_N, CTA_K, DMA_Stage, true>;
-    gpuErrChk(cudaFuncSetAttribute(*kernel_instance, cudaFuncAttributeMaxDynamicSharedMemorySize,
+    gpuErrChk(hipFuncSetAttribute(*kernel_instance, hipFuncAttributeMaxDynamicSharedMemorySize,
                                    smemBytes));
     gpuErrChk(cudaLaunchKernelEx(&config, kernel_instance, mA_tma, mB_tma, mC, mBias, tma_atom_A,
                                  tma_atom_B, tiled_mma, pdl_count));
@@ -1291,3 +1291,5 @@ void tgv_gemm_host(
 
 }  // namespace gemm
 }  // namespace flashinfer
+
+

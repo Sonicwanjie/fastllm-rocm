@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2024 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +16,7 @@
 #ifndef FLASHINFER_DECODE_PARAMS_CUH_
 #define FLASHINFER_DECODE_PARAMS_CUH_
 
-#include <cuda_runtime.h>
+#include <hip/hip_runtime.h>
 
 #include <cstdint>
 
@@ -277,3 +277,4 @@ struct BatchDecodeParamsMLA {
 }  // namespace flashinfer
 
 #endif  // FLASHINFER_DECODE_PARAMS_CUH_
+

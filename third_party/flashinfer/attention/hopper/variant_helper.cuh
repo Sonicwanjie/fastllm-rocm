@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2024 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,7 +16,7 @@
 #ifndef FLASHINFER_ATTENTION_HOPPER_VARIANT_HELPER_H
 #define FLASHINFER_ATTENTION_HOPPER_VARIANT_HELPER_H
 
-#include <cuda_runtime.h>
+#include <hip/hip_runtime.h>
 
 #include <cstdint>
 
@@ -62,3 +62,4 @@ struct AttentionVariantBase {
 }  // namespace flashinfer
 
 #endif  // FLASHINFER_ATTENTION_HOPPER_VARIANT_HELPER_H
+

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2023 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -72,14 +72,14 @@ struct FwdRunner {
   using LayoutO = typename Epilogue::LayoutO;
   using LayoutLSE = typename Epilogue::LayoutLSE;
 
-  static cudaError_t run(void* workspace_buffer, DTypeIn* q, DTypeIn* k, DTypeIn* v,
+  static hipError_t run(void* workspace_buffer, DTypeIn* q, DTypeIn* k, DTypeIn* v,
                          IdType* qo_segment_offsets, IdType* kv_segment_offsets,
                          IdType* work_indptr, IdType* qo_tile_indices, IdType* qo_head_indices,
                          IdType* batch_indices, DTypeOut* o, float* maybe_lse, int mask_mode_code,
                          double sm_scale, int num_qo_heads, int num_kv_heads, int head_dim_qk,
                          int head_dim_vo, int q_stride_n, int q_stride_h, int k_stride_n,
                          int k_stride_h, int v_stride_n, int v_stride_h, int batch_size,
-                         int total_qo_len, int total_kv_len, int max_qo_len, cudaStream_t stream) {
+                         int total_qo_len, int total_kv_len, int max_qo_len, hipStream_t stream) {
     cutlass::KernelHardwareInfo hw_info;
     hw_info.device_id = 0;
     hw_info.sm_count =
@@ -138,35 +138,35 @@ struct FwdRunner {
     status = op.can_implement(arguments);
     if (status != cutlass::Status::kSuccess) {
       std::cerr << "This kernel is not supported. Last CUDA error is: "
-                << cudaGetErrorString(cudaGetLastError()) << std::endl;
+                << hipGetErrorString(hipGetLastError()) << std::endl;
     }
 
     status = op.initialize(arguments, workspace_ptr);
     if (status != cutlass::Status::kSuccess) {
       std::cerr << "Failed to initialize the CUTLASS kernel. Last CUDA error is: "
-                << cudaGetErrorString(cudaGetLastError()) << std::endl;
+                << hipGetErrorString(hipGetLastError()) << std::endl;
     }
 
     // Run
     status = op.run(stream);
     if (status != cutlass::Status::kSuccess) {
       std::cerr << "Failed to launch the CUTLASS kernel. Last CUDA error is: "
-                << cudaGetErrorString(cudaGetLastError()) << std::endl;
+                << hipGetErrorString(hipGetLastError()) << std::endl;
     }
-    return cudaSuccess;
+    return hipSuccess;
   }
 };
 
 template <typename DTypeIn, typename DTypeOut, typename IdType, class TileShapeQK,
           class TileShapePV, class ActiveMask>
-cudaError_t run_fmha_fwd(void* workspace_buffer, DTypeIn* q, DTypeIn* k, DTypeIn* v,
+hipError_t run_fmha_fwd(void* workspace_buffer, DTypeIn* q, DTypeIn* k, DTypeIn* v,
                          IdType* qo_segment_offsets, IdType* kv_segment_offsets,
                          IdType* work_indptr, IdType* qo_tile_indices, IdType* qo_head_indices,
                          IdType* batch_indices, DTypeOut* o, float* maybe_lse, int mask_mode_code,
                          double sm_scale, int num_qo_heads, int num_kv_heads, int head_dim_qk,
                          int head_dim_vo, int q_stride_n, int q_stride_h, int k_stride_n,
                          int k_stride_h, int v_stride_n, int v_stride_h, int batch_size,
-                         int total_qo_len, int total_kv_len, int max_qo_len, cudaStream_t stream) {
+                         int total_qo_len, int total_kv_len, int max_qo_len, hipStream_t stream) {
   return FwdRunner<DTypeIn, DTypeOut, IdType, TileShapeQK, TileShapePV, ActiveMask>::run(
       workspace_buffer, q, k, v, qo_segment_offsets, kv_segment_offsets, work_indptr,
       qo_tile_indices, qo_head_indices, batch_indices, o, maybe_lse, mask_mode_code, sm_scale,
@@ -176,3 +176,4 @@ cudaError_t run_fmha_fwd(void* workspace_buffer, DTypeIn* q, DTypeIn* k, DTypeIn
 }
 
 };  // namespace flashinfer
+

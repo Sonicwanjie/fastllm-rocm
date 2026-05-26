@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2022-2024, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -104,25 +104,26 @@ void computeCountAndIndice(int* experts, int* sendCounts, int* recvCounts, int* 
                            int* backwardIndiceWorkspace, int* recvIndiceWorkspace,
                            MoeCommWorkspace workspace, int tokenCount, int maxTokenCountPerRank,
                            int topK, int expert_count, int rankId, int rankCount,
-                           cudaStream_t stream);
+                           hipStream_t stream);
 
 void computeCumsum(int* sendCountsCumsum, int* recvCountsCumsum, int rankId, int rankCount,
-                   cudaStream_t stream);
+                   hipStream_t stream);
 
 void moveIndice(int* sendCountsCumsum, int* recvCountsCumsum, int* sendIndice,
                 int* gatherSendIndice, int* backwardIndice, int* gatherBackwardIndice,
                 int* recvIndice, int* gatherRecvIndice, int rankId, int rankCount,
-                int maxTokenCountPerRank, cudaStream_t stream);
+                int maxTokenCountPerRank, hipStream_t stream);
 
 void allToAllMetadata(int* sendExperts, int* recvExperts, float* sendScales, float* recvScales,
                       int* localExpertStatics, int* gatheredExpertStatics,
                       MoeCommWorkspace workspace, int* sendCountsCumsum, int* localSendIndice,
                       int* recvCountsCumsum, int* localRecvIndice, int tokenCount,
                       int maxTokenCountPerRank, int topK, int expertCount, int slotCount,
-                      int rankId, int rankCount, cudaStream_t stream);
+                      int rankId, int rankCount, hipStream_t stream);
 
 size_t getMoePrepareWorkspaceSize(int epSize);
 
 }  // namespace moe_prepare
 
 }  // namespace flashinfer::trtllm_alltoall
+

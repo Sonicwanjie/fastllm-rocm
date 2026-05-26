@@ -434,6 +434,22 @@ namespace fastllm {
 
     JinjaTemplate::JinjaTemplate (const std::string &temp) {
         this->temp = temp;
+        // Strip unsupported Jinja macro blocks
+        {
+            std::string &tpl = this->temp;
+            for (size_t p = 0; p < tpl.size(); ) {
+                size_t ms = tpl.find("{% macro", p);
+                if (ms == std::string::npos) ms = tpl.find("{%- macro", p);
+                if (ms == std::string::npos) break;
+                size_t me = tpl.find("{% endmacro", ms + 2);
+                if (me == std::string::npos) me = tpl.find("{%- endmacro", ms + 2);
+                if (me == std::string::npos) break;
+                size_t cl = tpl.find("%}", me + 2);
+                if (cl == std::string::npos) { p = me + 2; continue; }
+                tpl.erase(ms, cl + 2 - ms);
+                p = ms;
+            }
+        }
         // 词法解析
         int pos = 0;
         bool trimNext = false;

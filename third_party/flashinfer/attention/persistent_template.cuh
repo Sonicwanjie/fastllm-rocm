@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2025 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,7 +17,7 @@
 #define FLASHINFER_ATTENTION_PERSISTENT_TEMPLATE_CUH
 
 #include <cooperative_groups.h>
-#include <cuda_runtime.h>
+#include <hip/hip_runtime.h>
 
 #include <cstdint>
 
@@ -98,3 +98,4 @@ __global__ __launch_bounds__(
 }  // namespace flashinfer
 
 #endif  // FLASHINFER_ATTENTION_PERSISTENT_TEMPLATE_CUH
+

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2024 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -128,10 +128,10 @@ typename T::Fmha::Arguments args_from_options(void* out_ptr, void* lse_ptr, void
 }
 
 template <typename Element>
-cudaError_t runMla(void* workspace_ptr, void* out_ptr, void* lse_ptr, void* q_absorbed_ptr,
+hipError_t runMla(void* workspace_ptr, void* out_ptr, void* lse_ptr, void* q_absorbed_ptr,
                    void* ckv_kpe_cache_ptr, void* seq_lens_ptr, void* page_table_ptr, int batches,
                    int page_count_per_seq, int page_count_total, int page_size, int device_index,
-                   cudaStream_t stream) {
+                   hipStream_t stream) {
   using MlaSm100Type = MlaSm100<Element>;
   typename MlaSm100Type::Fmha fmha;
   auto arguments = args_from_options<MlaSm100Type>(
@@ -144,10 +144,11 @@ cudaError_t runMla(void* workspace_ptr, void* out_ptr, void* lse_ptr, void* q_ab
 
   CUTLASS_CHECK(fmha.run(arguments, workspace_ptr, stream));
 
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 }  // namespace attention
 
 }  // namespace flashinfer
 #endif  // FLASHINFER_ATTENTION_CUTLASS_MLA_CUH_
+

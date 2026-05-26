@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2024, Jay Shah, Ganesh Bikshandi, Ying Zhang, Vijay Thakkar, Pradeep Ramani, Tri
  * Dao. Licensed under the BSD 3-Clause.
  *
@@ -8,15 +8,15 @@
 #define FLASHINFER_ATTENTION_HOPPER_UTILS_CUH_
 
 #include <assert.h>
-#include <cuda_fp16.h>
+#include <hip/hip_fp16.h>
 #include <stdint.h>
 #include <stdlib.h>
 
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
-#include <cuda_bf16.h>
+#include <hip/hip_bfloat16.h>
 #endif
 
-#include <cuda_runtime.h>
+#include <hip/hip_runtime.h>
 #include <cutlass/array.h>
 #include <cutlass/cutlass.h>
 #include <cutlass/numeric_conversion.h>
@@ -195,3 +195,4 @@ __forceinline__ __device__ void gemm(TiledMma& tiled_mma, TensorA const& tCrA, T
 }  // namespace flashinfer
 
 #endif  // FLASHINFER_ATTENTION_HOPPER_UTILS_CUH_
+

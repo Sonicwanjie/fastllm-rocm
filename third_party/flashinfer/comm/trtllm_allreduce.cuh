@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) 2022-2024, NVIDIA CORPORATION.  All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,8 +15,8 @@
  */
 
 #include <cooperative_groups.h>
-#include <cuda_bf16.h>
-#include <cuda_fp16.h>
+#include <hip/hip_bfloat16.h>
+#include <hip/hip_fp16.h>
 
 #include <tuple>
 #include <type_traits>
@@ -536,8 +536,8 @@ __global__ void rms_pre_post_norm_kernel(
 }
 
 template <typename T, bool Bias = false, bool Residual = false, bool Affine = false>
-cudaError_t rms_norm_kernel_launcher(AllReduceParams<T>& params, AllReduceFusionOp fusionOp,
-                                     bool launch_with_pdl, cudaStream_t stream) {
+hipError_t rms_norm_kernel_launcher(AllReduceParams<T>& params, AllReduceFusionOp fusionOp,
+                                     bool launch_with_pdl, hipStream_t stream) {
   static constexpr uint32_t VEC_SIZE = 16 / sizeof(T);
   FLASHINFER_CHECK(params.fusion_params.hidden_size % VEC_SIZE == 0,
                    "hidden_size must be a multiple of ", VEC_SIZE);
@@ -569,10 +569,10 @@ cudaError_t rms_norm_kernel_launcher(AllReduceParams<T>& params, AllReduceFusion
     kernelConfig.numAttrs = 1;
 
     if (fusionOp == AllReduceFusionOp::RESIDUAL_RMS_NORM) {
-      FLASHINFER_CUDA_CALL(cudaLaunchKernelEx(
+      FLASHINFER_HIP_CALL(cudaLaunchKernelEx(
           &kernelConfig, rms_norm_kernel<T, Bias, Residual, Affine, true>, params));
     } else {  // AllReduceFusionOp::RESIDUAL_RMS_PREPOST_NORM
-      FLASHINFER_CUDA_CALL(cudaLaunchKernelEx(
+      FLASHINFER_HIP_CALL(cudaLaunchKernelEx(
           &kernelConfig, rms_pre_post_norm_kernel<T, Bias, Residual, Affine>, params));
     }
   } else {
@@ -589,14 +589,14 @@ cudaError_t rms_norm_kernel_launcher(AllReduceParams<T>& params, AllReduceFusion
     kernelConfig.numAttrs = 1;
 
     if (fusionOp == AllReduceFusionOp::RESIDUAL_RMS_NORM) {
-      FLASHINFER_CUDA_CALL(cudaLaunchKernelEx(
+      FLASHINFER_HIP_CALL(cudaLaunchKernelEx(
           &kernelConfig, rms_norm_kernel<T, Bias, Residual, Affine, false>, params));
     } else {  // AllReduceFusionOp::RESIDUAL_RMS_PREPOST_NORM
-      FLASHINFER_CUDA_CALL(cudaLaunchKernelEx(
+      FLASHINFER_HIP_CALL(cudaLaunchKernelEx(
           &kernelConfig, rms_pre_post_norm_kernel<T, Bias, Residual, Affine>, params));
     }
   }
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 template <typename T, int RanksPerNode, bool PushMode>
@@ -800,9 +800,9 @@ int heuristic_min_warp_number(int tp_size, int hidden_size) {
 }
 
 template <typename T, int RanksPerNode, bool Bias, bool Affine>
-cudaError_t lamport_style_one_shot_all_reduce_norm_kernel_launcher(AllReduceParams<T> params,
+hipError_t lamport_style_one_shot_all_reduce_norm_kernel_launcher(AllReduceParams<T> params,
                                                                    bool launch_with_pdl,
-                                                                   cudaStream_t stream) {
+                                                                   hipStream_t stream) {
   static constexpr uint32_t VEC_SIZE = 16 / sizeof(T);
   FLASHINFER_CHECK(params.fusion_params.hidden_size % VEC_SIZE == 0,
                    "hidden_size must be a multiple of ", VEC_SIZE);
@@ -836,12 +836,12 @@ cudaError_t lamport_style_one_shot_all_reduce_norm_kernel_launcher(AllReducePara
   }
 #define LAUNCH_LAMPORT_KERNEL(CLUSTER_SIZE)                                                \
   if (cluster_size == CLUSTER_SIZE) {                                                      \
-    FLASHINFER_CUDA_CALL(cudaLaunchKernelEx(                                               \
+    FLASHINFER_HIP_CALL(cudaLaunchKernelEx(                                               \
         &kernel_config,                                                                    \
         lamport_style_one_shot_all_reduce_norm_kernel<CLUSTER_SIZE, T, RanksPerNode, Bias, \
                                                       Affine>,                             \
         params));                                                                          \
-    return cudaSuccess;                                                                    \
+    return hipSuccess;                                                                    \
   }
   LAUNCH_LAMPORT_KERNEL(1);
   LAUNCH_LAMPORT_KERNEL(2);
@@ -1056,9 +1056,9 @@ __global__ void __launch_bounds__(1024, 1)
 }
 
 template <typename T, int RanksPerNode, bool Bias, bool Affine>
-cudaError_t one_shot_all_reduce_norm_kernel_launcher(AllReduceParams<T>& params,
+hipError_t one_shot_all_reduce_norm_kernel_launcher(AllReduceParams<T>& params,
                                                      AllReduceFusionOp fusionOp,
-                                                     bool launch_with_pdl, cudaStream_t stream) {
+                                                     bool launch_with_pdl, hipStream_t stream) {
   int token_num = params.elts_total / params.fusion_params.hidden_size;
 
   if (fusionOp == AllReduceFusionOp::RESIDUAL_RMS_PREPOST_NORM) {
@@ -1099,11 +1099,11 @@ cudaError_t one_shot_all_reduce_norm_kernel_launcher(AllReduceParams<T>& params,
       kernelConfig.attrs = attribute;
       kernelConfig.numAttrs = 1;
       if (fusionOp == AllReduceFusionOp::RESIDUAL_RMS_NORM) {
-        FLASHINFER_CUDA_CALL(cudaLaunchKernelEx(
+        FLASHINFER_HIP_CALL(cudaLaunchKernelEx(
             &kernelConfig, one_shot_all_reduce_norm_kernel<T, RanksPerNode, Bias, Affine, true>,
             params));
       } else {  // fusionOp == AllReduceFusionOp::RESIDUAL_RMS_PREPOST_NORM
-        FLASHINFER_CUDA_CALL(cudaLaunchKernelEx(
+        FLASHINFER_HIP_CALL(cudaLaunchKernelEx(
             &kernelConfig, one_shot_prenorm_all_reduce_norm_kernel<T, RanksPerNode, Bias, Affine>,
             params));
       }
@@ -1121,17 +1121,17 @@ cudaError_t one_shot_all_reduce_norm_kernel_launcher(AllReduceParams<T>& params,
       kernelConfig.numAttrs = 1;
 
       if (fusionOp == AllReduceFusionOp::RESIDUAL_RMS_NORM) {
-        FLASHINFER_CUDA_CALL(cudaLaunchKernelEx(
+        FLASHINFER_HIP_CALL(cudaLaunchKernelEx(
             &kernelConfig, one_shot_all_reduce_norm_kernel<T, RanksPerNode, Bias, Affine, false>,
             params));
       } else {  // fusionOp == AllReduceFusionOp::RESIDUAL_RMS_PREPOST_NORM
-        FLASHINFER_CUDA_CALL(cudaLaunchKernelEx(
+        FLASHINFER_HIP_CALL(cudaLaunchKernelEx(
             &kernelConfig, one_shot_prenorm_all_reduce_norm_kernel<T, RanksPerNode, Bias, Affine>,
             params));
       }
     }
   }
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 template <typename T>
@@ -1144,13 +1144,13 @@ __global__ void lamport_initialize_kernel(T* buffer, size_t size) {
 }
 
 template <typename T>
-cudaError_t lamport_initialize_kernel_launcher(void* buffer, size_t size, cudaStream_t stream) {
+hipError_t lamport_initialize_kernel_launcher(void* buffer, size_t size, hipStream_t stream) {
   static constexpr uint32_t VEC_SIZE = 16 / sizeof(T);
   int block_size = 1024;
   int grid_size = (size + 1024 * VEC_SIZE - 1) / (1024 * VEC_SIZE);
   lamport_initialize_kernel<T>
       <<<grid_size, block_size, 0, stream>>>(reinterpret_cast<T*>(buffer), size);
-  auto status = cudaGetLastError();
+  auto status = hipGetLastError();
   return status;
 }
 };  // namespace reduce_fusion
@@ -1516,9 +1516,9 @@ std::tuple<int, int> kernelLaunchConfig(AllReduceStrategyType algo, AllReducePar
 
 template <typename T, int RANKS_PER_NODE, bool PUSH_MODE = false, bool USE_MEMCPY = false,
           bool Bias = false, bool Affine = false>
-cudaError_t AllReduceNormKernelLaunch(AllReduceStrategyType algo, AllReduceFusionOp fusionOp,
+hipError_t AllReduceNormKernelLaunch(AllReduceStrategyType algo, AllReduceFusionOp fusionOp,
                                       AllReduceParams<T>& params, bool launch_with_pdl,
-                                      cudaStream_t stream) {
+                                      hipStream_t stream) {
   FLASHINFER_CHECK((fusionOp == AllReduceFusionOp::RESIDUAL_RMS_NORM ||
                     fusionOp == AllReduceFusionOp::RESIDUAL_RMS_PREPOST_NORM),
                    "Unsupported AllReduceFusionOp: %d", static_cast<int>(fusionOp));
@@ -1531,9 +1531,9 @@ cudaError_t AllReduceNormKernelLaunch(AllReduceStrategyType algo, AllReduceFusio
     auto [blocks_per_grid, threads_per_block] =
         kernelLaunchConfig<T>(algo, params, elts_per_thread);
     if (USE_MEMCPY) {
-      cudaMemcpyAsync(params.peer_comm_buffer_ptrs[params.local_rank],
+      hipMemcpyAsync(params.peer_comm_buffer_ptrs[params.local_rank],
                       params.local_input_buffer_ptr, params.elts_total * sizeof(T),
-                      cudaMemcpyDeviceToDevice, stream);
+                      hipMemcpyDeviceToDevice, stream);
     }
     auto output_ptr = params.local_output_buffer_ptr;
     params.local_output_buffer_ptr = params.fusion_params.intermediate_buffer;
@@ -1550,7 +1550,7 @@ cudaError_t AllReduceNormKernelLaunch(AllReduceStrategyType algo, AllReduceFusio
     kernelConfig.attrs = attribute;
     kernelConfig.numAttrs = 1;
 
-    FLASHINFER_CUDA_CALL(cudaLaunchKernelEx(
+    FLASHINFER_HIP_CALL(cudaLaunchKernelEx(
         &kernelConfig,
         twoShotAllReduceKernel<T, RANKS_PER_NODE, !USE_MEMCPY, PUSH_MODE, Bias, true>, params));
 
@@ -1558,13 +1558,13 @@ cudaError_t AllReduceNormKernelLaunch(AllReduceStrategyType algo, AllReduceFusio
     return reduce_fusion::rms_norm_kernel_launcher<T, false, false, Affine>(
         params, fusionOp, launch_with_pdl, stream);
   }
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 template <typename T, int RANKS_PER_NODE, bool PUSH_MODE = false, bool USE_MEMCPY = false>
-cudaError_t AllReduceNormDispatch(AllReduceStrategyType algo, AllReduceFusionOp fusionOp,
+hipError_t AllReduceNormDispatch(AllReduceStrategyType algo, AllReduceFusionOp fusionOp,
                                   AllReduceParams<T>& params, bool launch_with_pdl,
-                                  cudaStream_t stream) {
+                                  hipStream_t stream) {
   if (params.fusion_params.bias_buffer && params.fusion_params.weight_buffer) {
     return AllReduceNormKernelLaunch<T, RANKS_PER_NODE, PUSH_MODE, USE_MEMCPY, true, true>(
         algo, fusionOp, params, launch_with_pdl, stream);
@@ -1578,21 +1578,21 @@ cudaError_t AllReduceNormDispatch(AllReduceStrategyType algo, AllReduceFusionOp 
     return AllReduceNormKernelLaunch<T, RANKS_PER_NODE, PUSH_MODE, USE_MEMCPY, false, false>(
         algo, fusionOp, params, launch_with_pdl, stream);
   }
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 template <typename T, int RANKS_PER_NODE, bool PUSH_MODE = false, bool USE_MEMCPY = false>
-cudaError_t AllReduceDispatch(AllReduceStrategyType algo, AllReduceFusionOp fusionOp,
+hipError_t AllReduceDispatch(AllReduceStrategyType algo, AllReduceFusionOp fusionOp,
                               AllReduceParams<T>& params, bool launch_with_pdl,
-                              cudaStream_t stream) {
+                              hipStream_t stream) {
   FLASHINFER_CHECK(fusionOp == AllReduceFusionOp::NONE, "Unsupported AllReduceFusionOp: %d",
                    static_cast<int>(fusionOp));
   FLASHINFER_CHECK(!(USE_MEMCPY && PUSH_MODE), "Memcpy cannot be used with PUSH_MODE.");
   size_t elts_per_thread = 16 / sizeof(T);
   auto [blocks_per_grid, threads_per_block] = kernelLaunchConfig(algo, params, elts_per_thread);
   if (USE_MEMCPY) {
-    cudaMemcpyAsync(params.peer_comm_buffer_ptrs[params.local_rank], params.local_input_buffer_ptr,
-                    params.elts_total * sizeof(T), cudaMemcpyDeviceToDevice, stream);
+    hipMemcpyAsync(params.peer_comm_buffer_ptrs[params.local_rank], params.local_input_buffer_ptr,
+                    params.elts_total * sizeof(T), hipMemcpyDeviceToDevice, stream);
   }
   if (algo == AllReduceStrategyType::ONESHOT) {
     auto* kernel_instance = &oneShotAllReduceKernel<T, RANKS_PER_NODE, !USE_MEMCPY, PUSH_MODE>;
@@ -1621,13 +1621,13 @@ cudaError_t AllReduceDispatch(AllReduceStrategyType algo, AllReduceFusionOp fusi
     config.numAttrs = 1;
     cudaLaunchKernelEx(&config, kernel_instance, params);
   }
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 template <typename T, int RANKS_PER_NODE, bool PUSH_MODE = false, bool USE_MEMCPY = false>
-cudaError_t AllReduceDispatchMemcpy(AllReduceStrategyType algo, AllReduceFusionOp fusionOp,
+hipError_t AllReduceDispatchMemcpy(AllReduceStrategyType algo, AllReduceFusionOp fusionOp,
                                     AllReduceParams<T>& params, bool launch_with_pdl,
-                                    cudaStream_t stream) {
+                                    hipStream_t stream) {
   if (fusionOp == AllReduceFusionOp::NONE) {
     FLASHINFER_LOG_DEBUG("AllReduceDispatch enabled");
     return AllReduceDispatch<T, RANKS_PER_NODE, PUSH_MODE, USE_MEMCPY>(algo, fusionOp, params,
@@ -1640,9 +1640,9 @@ cudaError_t AllReduceDispatchMemcpy(AllReduceStrategyType algo, AllReduceFusionO
 }
 
 template <typename T, int RANKS_PER_NODE, bool PUSH_MODE = false>
-cudaError_t AllReduceDispatchPushMode(AllReduceStrategyType algo, AllReduceStrategyConfig config,
+hipError_t AllReduceDispatchPushMode(AllReduceStrategyType algo, AllReduceStrategyConfig config,
                                       AllReduceFusionOp fusionOp, AllReduceParams<T>& params,
-                                      bool launch_with_pdl, cudaStream_t stream) {
+                                      bool launch_with_pdl, hipStream_t stream) {
   if (static_cast<std::underlying_type_t<AllReduceStrategyConfig>>(config) &
       static_cast<std::underlying_type_t<AllReduceStrategyConfig>>(
           AllReduceStrategyConfig::USE_MEMCPY)) {
@@ -1655,10 +1655,10 @@ cudaError_t AllReduceDispatchPushMode(AllReduceStrategyType algo, AllReduceStrat
 }
 
 template <typename T, int RANKS_PER_NODE>  //, bool USE_MEMCPY = false, bool PUSH_MODE = false>
-cudaError_t AllReduceDispatchRanksPerNode(AllReduceStrategyType algo,
+hipError_t AllReduceDispatchRanksPerNode(AllReduceStrategyType algo,
                                           AllReduceStrategyConfig config,
                                           AllReduceFusionOp fusionOp, AllReduceParams<T>& params,
-                                          bool launch_with_pdl, cudaStream_t stream) {
+                                          bool launch_with_pdl, hipStream_t stream) {
   if (static_cast<std::underlying_type_t<AllReduceStrategyConfig>>(config) &
       static_cast<std::underlying_type_t<AllReduceStrategyConfig>>(
           AllReduceStrategyConfig::PUSH_MODE)) {
@@ -1671,9 +1671,9 @@ cudaError_t AllReduceDispatchRanksPerNode(AllReduceStrategyType algo,
 }
 
 template <typename T>
-cudaError_t AllReduceDispatchType(AllReduceParams<T>& params, AllReduceStrategyType strat,
+hipError_t AllReduceDispatchType(AllReduceParams<T>& params, AllReduceStrategyType strat,
                                   AllReduceStrategyConfig config, AllReduceFusionOp fusionOp,
-                                  bool launch_with_pdl, cudaStream_t stream) {
+                                  bool launch_with_pdl, hipStream_t stream) {
   switch (params.ranks_per_node) {
     case 2:
       return AllReduceDispatchRanksPerNode<T, /*RANKS_PER_NODE=*/2>(strat, config, fusionOp, params,
@@ -1693,13 +1693,13 @@ cudaError_t AllReduceDispatchType(AllReduceParams<T>& params, AllReduceStrategyT
     default:
       FLASHINFER_ERROR("Custom all reduce only supported on {2, 4, 6, 8, 16} GPUs per node.");
   }
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 template <typename T>
-cudaError_t customAllReduce(AllReduceParams<T>& params, AllReduceStrategyType strat,
+hipError_t customAllReduce(AllReduceParams<T>& params, AllReduceStrategyType strat,
                             AllReduceStrategyConfig config, AllReduceFusionOp fusionOp,
-                            bool launch_with_pdl, cudaStream_t stream) {
+                            bool launch_with_pdl, hipStream_t stream) {
   FLASHINFER_CHECK(configurationSupported<T>(strat, params.elts_total, params.ranks_per_node),
                    "Custom all-reduce configuration unsupported");
 
@@ -1707,9 +1707,9 @@ cudaError_t customAllReduce(AllReduceParams<T>& params, AllReduceStrategyType st
 }
 
 template <typename T>
-cudaError_t lamportInitialize(void* buffer, size_t size, cudaStream_t stream) {
+hipError_t lamportInitialize(void* buffer, size_t size, hipStream_t stream) {
   if (size == 0) {
-    return cudaSuccess;
+    return hipSuccess;
   }
   FLASHINFER_LOG_INFO("lamportInitialize start: buffer: {}, size: {}", buffer, size);
   return reduce_fusion::lamport_initialize_kernel_launcher<T>(buffer, size, stream);
@@ -1717,22 +1717,24 @@ cudaError_t lamportInitialize(void* buffer, size_t size, cudaStream_t stream) {
 
 // lamport: 3 buffers for synchronization
 template <typename T>
-cudaError_t lamportInitializeAll(void* buffer_0, void* buffer_1, void* buffer_2, size_t size,
-                                 cudaStream_t stream) {
+hipError_t lamportInitializeAll(void* buffer_0, void* buffer_1, void* buffer_2, size_t size,
+                                 hipStream_t stream) {
   auto status = lamportInitialize<T>(buffer_0, size / sizeof(T), stream);
-  FLASHINFER_CHECK(status == cudaSuccess, "lamportInitialize failed with error code " +
-                                              std::string(cudaGetErrorString(status)));
+  FLASHINFER_CHECK(status == hipSuccess, "lamportInitialize failed with error code " +
+                                              std::string(hipGetErrorString(status)));
 
   status = lamportInitialize<T>(buffer_1, size / sizeof(T), stream);
-  FLASHINFER_CHECK(status == cudaSuccess, "lamportInitialize failed with error code " +
-                                              std::string(cudaGetErrorString(status)));
+  FLASHINFER_CHECK(status == hipSuccess, "lamportInitialize failed with error code " +
+                                              std::string(hipGetErrorString(status)));
 
   status = lamportInitialize<T>(buffer_2, size / sizeof(T), stream);
-  FLASHINFER_CHECK(status == cudaSuccess, "lamportInitialize failed with error code " +
-                                              std::string(cudaGetErrorString(status)));
+  FLASHINFER_CHECK(status == hipSuccess, "lamportInitialize failed with error code " +
+                                              std::string(hipGetErrorString(status)));
   cudaDeviceSynchronize();
-  return cudaSuccess;
+  return hipSuccess;
 }
 
 }  // namespace trtllm_allreduce
 }  // namespace flashinfer
+
+
