@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.5)
 
 project(fastllm LANGUAGES CXX)
 
@@ -309,7 +309,8 @@ if(USE_ROCM)
         src/devices/hip/linear/fastllm-linear-fp32.hip src/devices/hip/linear/fastllm-linear-fp16.hip src/devices/hip/linear/fastllm-linear-bf16.hip
         src/devices/hip/linear/fastllm-linear-fp8.hip src/devices/hip/linear/fastllm-linear-int4.hip src/devices/hip/linear/fastllm-linear-int4group.hip
         src/devices/hip/linear/fastllm-linear-int4nozero.hip src/devices/hip/linear/fastllm-linear-int8.hip
-        src/devices/hip/models/deepseekv4-kernels.hip src/devices/hip/moe/fastllm-moe-fp8.hip)
+        src/devices/hip/models/deepseekv4-kernels.hip src/devices/hip/moe/fastllm-moe-fp8.hip
+        src/devices/multihip/multicudadevice.cpp src/devices/multihip/multicuda_stubs.cpp)
     add_compile_definitions(USE_CUDA)
     if (DEFINED $ENV{ROCM_PATH})
         set(ROCM_PATH $ENV{ROCM_PATH})

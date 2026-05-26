@@ -17,6 +17,7 @@
 #define VEC_DTYPES_CUH_
 
 #ifdef __HIP__
+#include "devices/cuda/fastllm-hip.h"  // __nv_fp8_e4m3, __nv_fp8_e5m2, __nv_bfloat16
 #include <hip/hip_fp16.h>
 #include <hip/hip_bf16.h>
 #include <hip/hip_fp8.h>
@@ -89,8 +90,6 @@ inline __device__ hip_bfloat16 __hmul(hip_bfloat16 a, hip_bfloat16 b) {
 // nv_bfloat16 already defined above
 // __nv_bfloat162 already defined above
 // nv_bfloat162 already defined above
-// __nv_fp8_e4m3 from fastllm-hip.h is available in global scope
-// __nv_fp8_e5m2 from fastllm-hip.h is available in global scope
 // FP8 vector storage types - HIP uses raw arrays
 using __nv_fp8x2_storage_t = uint16_t;
 using __nv_fp8x4_storage_t = uint32_t;
