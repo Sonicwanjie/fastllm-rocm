@@ -645,6 +645,20 @@ __global__ void InitBlockAtten(float *sum0, float *max0, float *sum1, float *max
     }
 }
 
+// --- FP32 to FP16 batch conversion kernel ---
+__global__ void FastllmHipConvertFp32ToFp16Kernel(half *dst, const float *src, size_t count) {
+    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < count) {
+        dst[idx] = __float2half_rn(src[idx]);
+    }
+}
+
+static void FastllmHipConvertFp32ToFp16(half *dst, const float *src, size_t count) {
+    int threads = 256;
+    int blocks = (count + threads - 1) / threads;
+    hipLaunchKernelGGL(FastllmHipConvertFp32ToFp16Kernel, dim3(blocks), dim3(threads), 0, 0, dst, src, count);
+}
+
 template <int THREAD_PER_BLOCK>
 __global__ void AttnBlockUpdate(half *data, int n, int m, float *lastMax, float *lastSum, float *curMax, float *curSum) {
     __shared__ float scale;
@@ -2393,51 +2407,16 @@ bool FastllmCudaHalfPagedAttention(fastllm::Data &q, fastllm::Data &k, fastllm::
     auto runPrefill = [&]<typename QType, typename KVType>() {
         QType *qd = (QType*)q.cudaData;
         QType *od = (QType*)output.cudaData;
-        // --- FP32 KV cache compatibility: convert active pages to FP16 ---
+        // --- FP32 KV cache compatibility ---
         uint8_t *fp16KVDataK = nullptr;
         uint8_t *fp16KVDataV = nullptr;
         bool needKVConvert = (pagedKVCacheK->dataType == fastllm::DataType::FLOAT32);
         if (needKVConvert) {
-            size_t totalActiveElements = (size_t)k.pageIndex.size() * pageLen * numHeads * headDim;
-            size_t fp16Bytes = totalActiveElements * sizeof(half);
-            fp16KVDataK = (uint8_t*)FastllmCudaMalloc(fp16Bytes);
-            fp16KVDataV = (uint8_t*)FastllmCudaMalloc(fp16Bytes);
-            // Convert each active page from FP32 to FP16
-            size_t dstOffset = 0;
-            for (size_t pi = 0; pi < k.pageIndex.size(); pi++) {
-                int pageIdx = k.pageIndex[pi];
-                size_t pageElements = (size_t)pageLen * numHeads * headDim;
-                size_t srcOffset = (size_t)pageIdx * pageElements;
-                FastllmCudaConvertFp32ToFp16(
-                    (half*)(fp16KVDataK + dstOffset * sizeof(half)),
-                    (const float*)(pagedKVCacheK->cudaData + srcOffset * sizeof(float)),
-                    pageElements);
-                FastllmCudaConvertFp32ToFp16(
-                    (half*)(fp16KVDataV + dstOffset * sizeof(half)),
-                    (const float*)(pagedKVCacheV->cudaData + srcOffset * sizeof(float)),
-                    pageElements);
-                dstOffset += pageElements;
-                // Remap page index: in FP16 buffer, page pi starts at offset pi*pageLen*numHeads*headDim
-            }
-            // Remap indices_gpu to point into the contiguous FP16 buffer
-            // The FP16 buffer is laid out as: [page0_data, page1_data, ...] sequentially
-            // So page pi starts at index = pi * (pageLen * numHeads * headDim) / 1  (but paged_kv uses page-level indices)
-            // Actually, paged_kv_t uses indices_gpu as page indices into the data pointer
-            // Since we have a contiguous buffer with page pi at offset pi, we need a different approach
-            // The simplest: just convert ALL pages in the paged cache to FP16
-            // For small models this is fast (< 100ms for a few MB)
-            FastllmCudaFree(fp16KVDataK);
-            FastllmCudaFree(fp16KVDataV);
-            fp16KVDataK = nullptr;
-            fp16KVDataV = nullptr;
-
-            // Instead: convert the entire paged cache storage FP32 -> FP16 in-place would lose data.
-            // So allocate FP16 mirror of full storage and convert everything
             size_t totalStorageElements = (size_t)pagedKVCacheK->dims[0] * pageLen * numHeads * headDim;
             fp16KVDataK = (uint8_t*)FastllmCudaMalloc(totalStorageElements * sizeof(half));
             fp16KVDataV = (uint8_t*)FastllmCudaMalloc(totalStorageElements * sizeof(half));
-            FastllmCudaConvertFp32ToFp16((half*)fp16KVDataK, (const float*)pagedKVCacheK->cudaData, totalStorageElements);
-            FastllmCudaConvertFp32ToFp16((half*)fp16KVDataV, (const float*)pagedKVCacheV->cudaData, totalStorageElements);
+            FastllmHipConvertFp32ToFp16((half*)fp16KVDataK, (const float*)pagedKVCacheK->cudaData, totalStorageElements);
+            FastllmHipConvertFp32ToFp16((half*)fp16KVDataV, (const float*)pagedKVCacheV->cudaData, totalStorageElements);
         }
 
         KVType *pagedKVCacheDataK = (KVType*)(needKVConvert ? fp16KVDataK : pagedKVCacheK->cudaData);
@@ -2570,7 +2549,7 @@ bool FastllmCudaHalfPagedAttention(fastllm::Data &q, fastllm::Data &k, fastllm::
         exit(0);
     }
     
-    if (needKVConvert) { FastllmCudaFree(fp16KVDataK); FastllmCudaFree(fp16KVDataV); }
+
     DeviceSync();
     return true;
 }
@@ -2680,8 +2659,8 @@ bool FastllmCudaHalfPagedAttentionBatch(fastllm::Data &q, fastllm::Data &kCaches
             size_t totalStorageElements = (size_t)pagedKVCacheK->dims[0] * pageLen * numHeads * headDim;
             fp16KVDataK = (uint8_t*)FastllmCudaMalloc(totalStorageElements * sizeof(half));
             fp16KVDataV = (uint8_t*)FastllmCudaMalloc(totalStorageElements * sizeof(half));
-            FastllmCudaConvertFp32ToFp16((half*)fp16KVDataK, (const float*)pagedKVCacheK->cudaData, totalStorageElements);
-            FastllmCudaConvertFp32ToFp16((half*)fp16KVDataV, (const float*)pagedKVCacheV->cudaData, totalStorageElements);
+            FastllmHipConvertFp32ToFp16((half*)fp16KVDataK, (const float*)pagedKVCacheK->cudaData, totalStorageElements);
+            FastllmHipConvertFp32ToFp16((half*)fp16KVDataV, (const float*)pagedKVCacheV->cudaData, totalStorageElements);
         }
 
         KVType *pagedKVCacheDataK = (KVType*)(needKVConvert ? fp16KVDataK : pagedKVCacheK->cudaData);

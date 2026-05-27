@@ -57,7 +57,7 @@ namespace fastllm {
             JinjaTokenAssign, JinjaTokenNotEqual, JinjaTokenEqual, JinjaTokenLess, JinjaTokenLessEqual, JinjaTokenMore, JinjaTokenMoreEqual,
             JinjaTokenAdd, JinjaTokenSub, JinjaTokenMul, JinjaTokenDiv, JinjaTokenMod,
             JinjaTokenNot, JinjaTokenAnd, JinjaTokenOr,
-            JinjaTokenFilter, JinjaTokenNamespace, JinjaTokenSlice
+            JinjaTokenFilter, JinjaTokenNamespace, JinjaTokenSlice, JinjaTokenMacro, JinjaTokenEndMacro
         };
 
         JinjaToKenType type;
@@ -102,7 +102,9 @@ namespace fastllm {
             {"and", JinjaToken::JinjaToKenType::JinjaTokenAnd},
             {"or", JinjaToken::JinjaToKenType::JinjaTokenOr},
             {"not", JinjaToken::JinjaToKenType::JinjaTokenNot},
-            {"namespace", JinjaToken::JinjaToKenType::JinjaTokenNamespace}
+            {"namespace", JinjaToken::JinjaToKenType::JinjaTokenNamespace},
+            {"macro", JinjaToken::JinjaToKenType::JinjaTokenMacro},
+            {"endmacro", JinjaToken::JinjaToKenType::JinjaTokenEndMacro}
     };
 
     // 一个Jinja块 
@@ -110,7 +112,7 @@ namespace fastllm {
         enum JinjaBlockType {
             JinjaBlockOriginal = 0, JinjaBlockEmpty, JinjaBlockVar, JinjaBlockFor, 
             JinjaBlockEndFor, JinjaBlockIf, JinjaBlockElseIf, JinjaBlockElse, JinjaBlockEndIf,
-            JinjaBlockSet
+            JinjaBlockSet, JinjaBlockMacro, JinjaBlockEndMacro
         };
 
         JinjaBlockType type = JinjaBlockType::JinjaBlockOriginal;

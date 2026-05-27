@@ -1,4 +1,4 @@
-﻿#include "utils.h"
+#include "utils.h"
 #include "gemma4.h"
 
 
@@ -2336,7 +2336,7 @@ namespace fastllm {
         if (enable_moe_block) {
             PrepareMoeWeights();
         }
-        PrepareVision();
+        if (this->weight.weight.find("model.vision_tower.patch_embedder.input_proj.weight") != this->weight.weight.end()) PrepareVision();
     }
 
     void Gemma4Model::WarmUp() {

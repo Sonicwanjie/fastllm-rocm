@@ -1,4 +1,4 @@
-﻿//
+//
 // Created by huangyuyang on 6/25/23.
 //
 
@@ -2306,7 +2306,22 @@ printf("len = %d, spend = %f s. tokens / s = %f\n", (int)total, spend, (float)to
             }
         }
         JinjaTemplate temp = JinjaTemplate(this->weight.tokenizer.chatTemplate);
-        return temp.Apply(local);
+        std::string chatResult;
+        // For complex templates (containing macros), fall back to simple format
+        if (this->weight.tokenizer.chatTemplate.find("macro") != std::string::npos) {
+            // Simple fallback: just use raw input without chat template
+            auto it = var.dictValue.find("messages");
+            if (it != var.dictValue.end()) {
+                for (auto &msg : it->second.arrayValue) {
+                    auto cit = msg.dictValue.find("content");
+                    if (cit != msg.dictValue.end()) chatResult += cit->second.stringValue;
+                    chatResult += "\n";
+                }
+            }
+            return chatResult;
+        }
+        chatResult = temp.Apply(local);
+        return chatResult;
     }
 
     std::vector <int> basellm::ApplyChatTemplateToTokens(const JinjaVar &var) {

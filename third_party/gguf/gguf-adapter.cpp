@@ -332,6 +332,8 @@ namespace fastllm {
                         std::regex(R"(blk\.(\d+)\.attn_norm\.weight)"),
                         "model.language_model.layers.$1.input_layernorm.weight"
                     ), // attn_norm
+                    GGUFWeightReplaceRule (std::regex(R"(blk\.(\d+)\.attn_q_norm\.weight)"), "model.language_model.layers.$1.self_attn.q_norm.weight"), // attn_q_norm
+                    GGUFWeightReplaceRule (std::regex(R"(blk\.(\d+)\.attn_k_norm\.weight)"), "model.language_model.layers.$1.self_attn.k_norm.weight"), // attn_k_norm
                     GGUFWeightReplaceRule (
                         std::regex(R"(blk\.(\d+)\.ffn_norm\.weight)"),
                         "model.language_model.layers.$1.pre_feedforward_layernorm.weight"

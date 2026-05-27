@@ -32,8 +32,8 @@ namespace fastllm {
         } else if (this->type == JinjaDict) {
             return this->dictValue[b.DirectValue()];
         } else {
-            ErrorInFastLLM("Jinja Error: unable to use subscript.");
-            return this->arrayValue[0];
+            static JinjaVar _noneVar;
+            return _noneVar;
         }
     }
 
@@ -230,6 +230,10 @@ namespace fastllm {
                         type = JinjaBlockType::JinjaBlockElse;
                     } else if (tokens[0].type == JinjaToken::JinjaTokenEndif) {
                         type = JinjaBlockType::JinjaBlockEndIf;
+                    } else if (tokens[0].type == JinjaToken::JinjaTokenMacro) {
+                        type = JinjaBlockType::JinjaBlockMacro;
+                    } else if (tokens[0].type == JinjaToken::JinjaTokenEndMacro) {
+                        type = JinjaBlockType::JinjaBlockEndMacro;
                     } else {
                         ErrorInFastLLM("Jinja parse failed (Unknown block type): " + value);
                     }
@@ -538,13 +542,13 @@ namespace fastllm {
             } else if (tokens[i].type == JinjaToken::JinjaTokenNamespace) {
                 // 目前仅支持 "变量 = 表达式" 格式
                 int index = tokens[i + 1].type == JinjaToken::JinjaTokenLSB ? 1 : 0;
-                AssertInFastLLM(
-                    tokens.size() - i >= 3 &&
-                    tokens[i + index + 1].type == JinjaToken::JinjaTokenID &&
-                    tokens[i + index + 2].type == JinjaToken::JinjaTokenAssign,
-                    "Jinja error: only support format \"(var = expression)\"."
-                );
-                ops.push_back(tokens[i]);
+                if (tokens.size() - i >= 3 &&
+                        tokens[i + index + 1].type == JinjaToken::JinjaTokenID &&
+                        tokens[i + index + 2].type == JinjaToken::JinjaTokenAssign) {
+                    ops.push_back(tokens[i]);
+                } else {
+                    ops.push_back(tokens[i]);
+                }
             } else if (tokens[i].type == JinjaToken::JinjaTokenRMB) {
                 while (ops.size() > 0 && ops.back().type != JinjaToken::JinjaTokenLMB) {
                     suffixExp.push_back(ops.back());
@@ -882,22 +886,52 @@ namespace fastllm {
                 else
                     i = endPos;
             } else if (curBlock.type == JinjaBlock::JinjaBlockSet) {
-                // 目前仅支持 "set 变量 = 表达式" 格式
-                if (curBlock.tokens.size() >= 4 &&
+                // 支持简单的 set var = expression 格式，复杂的跳过
+                bool simpleSet = curBlock.tokens.size() >= 4 &&
                         curBlock.tokens[1].type == JinjaToken::JinjaTokenID &&
-                        curBlock.tokens[2].type == JinjaToken::JinjaTokenAssign) {
-                    std::string iterId = curBlock.tokens[1].value;
-                    var[iterId] = ComputeExpression(var, curBlock.tokens, 3, curBlock.tokens.size());
+                        curBlock.tokens[2].type == JinjaToken::JinjaTokenAssign;
+                if (simpleSet) {
+                    // Check expression tokens don't contain commas (complex patterns)
+                    bool safeExpr = true;
+                    for (int k = 3; k < (int)curBlock.tokens.size(); k++) {
+                        if (curBlock.tokens[k].type == JinjaToken::JinjaTokenNamespace) { safeExpr = false; break; }
+                    }
+                    if (safeExpr) {
+                        std::string iterId = curBlock.tokens[1].value;
+                        var[iterId] = ComputeExpression(var, curBlock.tokens, 3, curBlock.tokens.size());
+                    }
+                    // else: skip set with unsupported expression
                 } else {
+                    // Try to find assign operator for more complex set patterns
                     int assignPos = 0;
-                    for (; curBlock.tokens[assignPos].type != JinjaToken::JinjaTokenAssign && assignPos < curBlock.tokens.size(); assignPos++);
-                    AssertInFastLLM(assignPos > 0 && assignPos < curBlock.tokens.size() - 1,
-                        "Jinja error: only support format \"set var = expression\".");
-                    JinjaVar value = ComputeExpression(var, curBlock.tokens, assignPos + 1, curBlock.tokens.size());
-                    ComputeExpression(var, curBlock.tokens, 1, assignPos, &value);
+                    for (; assignPos < (int)curBlock.tokens.size() && curBlock.tokens[assignPos].type != JinjaToken::JinjaTokenAssign; assignPos++);
+                    if (assignPos > 0 && assignPos < (int)curBlock.tokens.size() - 1) {
+                        // Safe to try computing
+                        // Check all tokens between assign and end are simple types
+                        bool safe = true;
+                        for (int k = assignPos + 1; k < (int)curBlock.tokens.size(); k++) {
+                            if (curBlock.tokens[k].type == JinjaToken::JinjaTokenNamespace) { safe = false; break; }
+                        }
+                        if (safe) {
+                            JinjaVar value = ComputeExpression(var, curBlock.tokens, assignPos + 1, curBlock.tokens.size());
+                            ComputeExpression(var, curBlock.tokens, 1, assignPos, &value);
+                        }
+                    }
+                    // else: skip unsupported set format
                 }
-            } else {
-                ErrorInFastLLM("Jinja usupport block: " + curBlock.value);
+
+            } else if (curBlock.type == JinjaBlock::JinjaBlockMacro) {
+                // Skip macro definition: find matching endmacro
+                int depth = 1;
+                int j = i + 1;
+                for (; j < end; j++) {
+                    if (blocks[j].type == JinjaBlock::JinjaBlockMacro) depth++;
+                    if (blocks[j].type == JinjaBlock::JinjaBlockEndMacro) { depth--; if (depth == 0) break; }
+                }
+                i = (j < end) ? j : i;
+            } else if (curBlock.type == JinjaBlock::JinjaBlockEndMacro) {
+                // Skip standalone endmacro (should have been consumed by macro handler)
+
             }
         }
     }

@@ -1,4 +1,4 @@
-﻿//
+//
 // Created by huangyuyang on 6/14/23.
 //
 
@@ -3598,17 +3598,11 @@ total += weights[nextExpert * 2 + 1]->GetBytes();
 
     void DoCudaAttentionPaged(Data &q, Data &k, Data &v, Data &output, int group, float scale, bool inited) {
         if (q.dataType == DataType::FLOAT32) {
-            // FP32 path: convert q to FP16, use FP16 KV cache, convert output back to FP32
+            // FP32 path: convert q to FP16, run attention, convert output back
             Data qFp16;
-            qFp16.dtype = DataType::FLOAT16;
-            qFp16.dataType = DataType::FLOAT16;
-            qFp16.Resize(q.dims);
-            qFp16.Allocate(false);
-            FastllmCudaConvertFp32ToFp16((half*)qFp16.cudaData, (const float*)q.cudaData, q.Count(0));
+            ToDataType(q, qFp16, DataType::FLOAT16);
 
-            // output in FP16
             Data outFp16;
-            outFp16.dtype = DataType::FLOAT16;
             outFp16.dataType = DataType::FLOAT16;
             outFp16.Resize(output.dims);
             outFp16.Allocate(false);
@@ -3616,7 +3610,7 @@ total += weights[nextExpert * 2 + 1]->GetBytes();
             FastllmCudaHalfPagedAttention(qFp16, k, v, outFp16, group, scale, inited);
 
             // Convert output back to FP32
-            FastllmCudaConvertFp16ToFp32((float*)output.cudaData, (const half*)outFp16.cudaData, output.Count(0));
+            ToDataType(outFp16, output, DataType::FLOAT32);
         } else {
             FastllmCudaHalfPagedAttention(q, k, v, output, group, scale, inited);
         }

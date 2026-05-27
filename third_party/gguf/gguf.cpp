@@ -1,4 +1,4 @@
-﻿#include <map>
+#include <map>
 
 #include <assert.h>
 #include "gguf.h"
@@ -25,6 +25,10 @@ GGML_API void        ggml_bf16_to_fp32_row(const ggml_bf16_t *bf16, float *fp32,
 }
 
 #if (defined(_MSC_VER) && _MSC_VER <= 1922) || (defined(__GNUC__) && __GNUC__ < 8 && !defined(__clang__))  // VS 2015/2017
+static void ggml_f32_to_f32_row(const float * GGML_RESTRICT x, float * GGML_RESTRICT y, int64_t k) {
+    if (k > 0) { memcpy(y, x, k * sizeof(float)); }
+}
+
 std::map <ggml_type, ggml_type_traits> type_traits = {
         {GGML_TYPE_I8, {/* type_name */"i8", /* blck_size */1,
             /* type_size */ sizeof(int8_t),/* is_quantized */  false,
@@ -41,8 +45,9 @@ std::map <ggml_type, ggml_type_traits> type_traits = {
         {GGML_TYPE_F64, {/* type_name */"f64", /* blck_size */1,
             /* type_size */ sizeof(double),/* is_quantized */  false,
         }},
-        {GGML_TYPE_F32, {/* type_name */"f32", /* blck_size */1,
+        {GGML_TYPE_F32, ggml_type_traits{/* type_name */"f32", /* blck_size */1,
             /* type_size */ sizeof(float),/* is_quantized */  false,
+            nullptr, GGML_TYPE_F32, /* to_float */ (ggml_to_float_t) ggml_f32_to_f32_row,
         }},
         {GGML_TYPE_F16, ggml_type_traits{/* type_name */"f16", /* blck_size */1,
             /* type_size */ sizeof(ggml_fp16_t),/* is_quantized */  false,
@@ -781,10 +786,15 @@ namespace fastllm {
             int ret = fread(oriData.data(), 1, ggml_nbytes(tensor), fi);
             fclose(fi);
 
-            auto toFloat = ggml_type_to_float(tensor->type);
-            AssertInFastLLM(toFloat != nullptr, "WeightImportGGUFTensor: weight " + tensor->name + "(type " + 
-                ggml_type_name(tensor->type) + ") can't convert to fp32.");
-            toFloat(oriData.data(), (float*)weight->cpuData, weight->Count(0));
+            if (tensor->type == GGML_TYPE_F32) {
+                // F32 to F32: direct memcpy
+                memcpy(weight->cpuData, oriData.data(), ggml_nbytes(tensor));
+            } else {
+                auto toFloat = ggml_type_to_float(tensor->type);
+                AssertInFastLLM(toFloat != nullptr, "WeightImportGGUFTensor: weight " + tensor->name + "(type " +
+                    ggml_type_name(tensor->type) + ") can't convert to fp32.");
+                toFloat(oriData.data(), (float*)weight->cpuData, weight->Count(0));
+            }
         } else if (replaceType == GGUFWeightReplaceRule::GGUFWeightReplaceForceFP16) {
             weight->dataType = DataType::FLOAT16;    
             weight->Resize(tensor->dims);
