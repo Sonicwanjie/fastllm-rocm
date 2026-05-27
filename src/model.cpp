@@ -1,4 +1,4 @@
-#include "utils.h"
+﻿#include "utils.h"
 #include "json11.hpp"
 
 #include "model.h"
@@ -1791,7 +1791,7 @@ namespace fastllm {
     std::string ConvertGGUFTypeToFastllmType(const std::string &type) {
         static std::map <std::string, std::string> ggufTypeToFastllmTypeDict = {
             {"qwen2", "qwen2"}, // llama
-            {"qwen3moe", "qwen3_moe"}, {"qwen3_moe", "qwen3_moe"}, // qwen3_moe
+            {"qwen3moe", "qwen3_moe"}, {"qwen3_moe", "qwen3_moe"}, {"qwen35", "qwen3_5"}, // qwen3_moe + qwen3.5
             {"glm4_moe", "glm4_moe"}, // glm4_moe
             {"minimax_m2", "minimax_m2"}, // minimax_m2
             {"deepseek2", "deepseek_v2"}, {"deepseek_v2", "deepseek_v2"},  {"deepseek_v3", "deepseek_v2"}, {"gemma4", "gemma4"} // gemma4 // deepseek_v2

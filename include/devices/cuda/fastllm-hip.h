@@ -3,17 +3,49 @@
 // only take effect when compiling with HIP
 #if defined(__HIP_PLATFORM_AMD__) && !defined(__HIP_PLATFORM_NVIDIA__)
 
+// MSVC compatibility: make HIP device/host attributes no-ops when compiling with MSVC
+// (hipcc defines __HIPCC__, MSVC does not)
+#ifndef __HIPCC__
+#ifndef __host__
+#define __host__
+#endif
+#ifndef __device__
+#define __device__
+#endif
+#ifndef __forceinline__
+#define __forceinline__ inline
+#endif
+// Override __align__ to use MSVC syntax (HIP defines it as __attribute__((aligned))
+// which MSVC cannot parse)
+#ifdef _MSC_VER
+#undef __align__
+#define __align__(x) __declspec(align(x))
+#endif
+#endif // __HIPCC__
+
 #include <hipblas/hipblas.h>
 #include <hip/hip_fp16.h>
+
+// BF16 headers: only include with hipcc (Clang-based).
+// MSVC cannot parse __attribute__((aligned)), __host__/__device__ etc. in amd_hip_bf16.h
+#ifdef __HIPCC__
 #include <hip/hip_bfloat16.h>
 #include <hip/hip_bf16.h>
+#else
+// MSVC: prevent downstream from including these headers
+#ifndef __HIP_BFLOAT16_H__
+#define __HIP_BFLOAT16_H__
+#endif
+#ifndef __HIP_BF16_H__
+#define __HIP_BF16_H__
+#endif
+#endif
 
-// __ldg compatibility - on AMD GPUs, regular loads are sufficient
+// __ldg compatibility
 template<typename T>
 __device__ __forceinline__ T __ldg(const T* ptr) { return *ptr; }
 
-// Ensure rocwmma macros are defined before any rocwmma header is pulled in
-// (e.g. via hip_fp8.h -> rocwmma/internal/float8.hpp)
+// rocwmma macros
 #ifndef ROCWMMA_HOST_DEVICE
 #define ROCWMMA_HOST_DEVICE __host__ __device__
 #endif
@@ -24,17 +56,13 @@ __device__ __forceinline__ T __ldg(const T* ptr) { return *ptr; }
 #define ROCWMMA_DEVICE __device__
 #endif
 
-#if defined(USE_ROCM) && !defined(HIP_NO_TENSOR_CORE) // support tensor core
+// rocwmma only works with hipcc
+#if defined(USE_ROCM) && !defined(HIP_NO_TENSOR_CORE) && defined(__HIPCC__)
 #include <rocwmma/rocwmma.hpp>
 #endif
 
-// ========== Warp shuffle macros ==========
-// Use inline functions to handle both calling conventions
-
-
-
-
-// ========== SIMD intrinsics ==========
+// ========== SIMD intrinsics (hipcc only) ==========
+#ifdef __HIPCC__
 typedef int8_t int8x4_t __attribute__((ext_vector_type(4)));
 typedef uint8_t uint8x4_t __attribute__((ext_vector_type(4)));
 
@@ -81,8 +109,10 @@ static __device__ __forceinline__ unsigned int __vcmpne4(unsigned int a, unsigne
     for (int i = 0; i < 4; ++i) vc[i] = va[i] == vb[i] ? 0x00 : 0xff;
     return c;
 }
+#endif // __HIPCC__
 
 // ========== bfloat16 types (CUDA compat) ==========
+#ifdef __HIPCC__
 struct __nv_bfloat16 {
     uint16_t __x;
     __host__ __device__ __forceinline__ __nv_bfloat16() : __x(0) {}
@@ -94,25 +124,45 @@ struct __nv_bfloat16 {
     __device__ __forceinline__ operator float() const { hip_bfloat16 r; r.data = __x; return static_cast<float>(r); }
     __device__ __forceinline__ operator hip_bfloat16() const { hip_bfloat16 r; r.data = __x; return r; }
 };
-
-// __nv_bfloat162: use __hip_bfloat162 from ROCm SDK
-// Provides x, y members (__hip_bfloat16 type) and full operator support
 using __nv_bfloat162 = __hip_bfloat162;
-
+#else
+// MSVC host-side: simple POD type matching __hip_bfloat16 layout
+struct __nv_bfloat16 {
+    uint16_t __x;
+    __nv_bfloat16() : __x(0) {}
+    __nv_bfloat16(float f) {
+        uint32_t bits;
+        memcpy(&bits, &f, sizeof(bits));
+        bits = (bits + (0x7fff + ((bits >> 16) & 1))) >> 16;
+        __x = (uint16_t)bits;
+    }
+    __nv_bfloat16(const __nv_bfloat16&) = default;
+    __nv_bfloat16& operator=(const __nv_bfloat16&) = default;
+    __nv_bfloat16& operator=(float f) { *this = __nv_bfloat16(f); return *this; }
+    operator float() const {
+        uint32_t bits = (uint32_t)__x << 16;
+        float f;
+        memcpy(&f, &bits, sizeof(f));
+        return f;
+    }
+};
+struct __nv_bfloat162 {
+    __nv_bfloat16 x;
+    __nv_bfloat16 y;
+    __nv_bfloat162() : x(), y() {}
+    __nv_bfloat162(__nv_bfloat16 a, __nv_bfloat16 b) : x(a), y(b) {}
+};
+#endif // __HIPCC__
 
 // bfloat16 conversion helpers
-// __nv_bfloat16 has operator float() and operator hip_bfloat16() for implicit conversion
-// So HIP native __bfloat162float(hip_bfloat16) and __float2bfloat16(float) work via implicit conversion
-// But for explicit __nv_bfloat16 arguments, we provide these helpers:
-static __host__ __device__ __forceinline__ float __nvbf16_to_float_nv(const __nv_bfloat16& v) {
+static inline float __nvbf16_to_float_nv(const __nv_bfloat16& v) {
     return static_cast<float>(v);
 }
-static __host__ __device__ __forceinline__ __nv_bfloat16 __float2nvbf16(float f) {
+static inline __nv_bfloat16 __float2nvbf16(float f) {
     return __nv_bfloat16(f);
 }
-// Override HIP bfloat16 functions to also accept __nv_bfloat16
-// (these are separate overloads, not macros, to avoid ambiguity)
 
+#ifdef __HIPCC__
 static __host__ __device__ __forceinline__ float2 __bfloat1622float2_impl(const __nv_bfloat162& v) {
     float2 r;
     r.x = static_cast<float>(v.x);
@@ -120,20 +170,26 @@ static __host__ __device__ __forceinline__ float2 __bfloat1622float2_impl(const 
     return r;
 }
 #define __bfloat1622float2 __bfloat1622float2_impl
-// FP8 type forward declarations
-// amd_hip_bf16.h has Clang-incompatible 'static' operators
-// Only include hip_fp8.h during actual device code generation (not host C++ compile)
+#endif
+
+// FP8 type stubs
+#ifdef __HIPCC__
 #if defined(__CUDA_ARCH__)
 #include <hip/hip_fp8.h>
 using __nv_fp8_e4m3 = __hip_fp8_e4m3;
 using __nv_fp8_e5m2 = __hip_fp8_e5m2;
 #else
-// Forward declare FP8 types for host/side compilation
 struct __nv_fp8_e4m3 { unsigned char __x; __host__ __device__ __nv_fp8_e4m3() : __x(0) {} __host__ __device__ __nv_fp8_e4m3(float) : __x(0) {} __host__ __device__ __nv_fp8_e4m3(int) : __x(0) {} __host__ __device__ operator float() const { return 0.f; } __host__ __device__ operator half() const { return __float2half(0.f); } __host__ __device__ operator __nv_bfloat16() const { return __nv_bfloat16(0.f); } };
 struct __nv_fp8_e5m2 { unsigned char __x; __host__ __device__ __nv_fp8_e5m2() : __x(0) {} __host__ __device__ __nv_fp8_e5m2(float) : __x(0) {} __host__ __device__ __nv_fp8_e5m2(int) : __x(0) {} __host__ __device__ operator float() const { return 0.f; } __host__ __device__ operator half() const { return __float2half(0.f); } __host__ __device__ operator __nv_bfloat16() const { return __nv_bfloat16(0.f); } };
 #endif
+#else
+struct __nv_fp8_e4m3 { unsigned char __x; __nv_fp8_e4m3() : __x(0) {} __nv_fp8_e4m3(float) : __x(0) {} operator float() const { return 0.f; } };
+struct __nv_fp8_e5m2 { unsigned char __x; __nv_fp8_e5m2() : __x(0) {} __nv_fp8_e5m2(float) : __x(0) {} operator float() const { return 0.f; } };
+#endif
 
 // ========== Union types with guards ==========
+#ifndef _FASTLLM_UNION_TYPES_DEFINED
+#define _FASTLLM_UNION_TYPES_DEFINED
 typedef union __align__(16) {
     uint2 in;
     uint8_t out[8];
@@ -157,6 +213,7 @@ typedef union __align__(16) _union_half_8 {
     half2 out2[4];
     __device__ _union_half_8() {}
 } union_half8;
+#endif // _FASTLLM_UNION_TYPES_DEFINED
 
 // BF16 union types
 #ifndef _UNION_BF16_TYPES_DEFINED
@@ -176,7 +233,7 @@ typedef union __align__(16) _union_bf16_4_fp16 {
     __nv_bfloat162 out2[2];
     __device__ _union_bf16_4_fp16() {}
 } union_bf16_4_fp16;
-#endif // _UNION_BF16_4_FP16_DEFINED
+#endif
 
 typedef union __align__(16) _union_bf16_8 {
     uint4 in;
@@ -232,8 +289,6 @@ namespace fastllm_hip {
     }
 } // namespace fastllm_hip
 
-// Use inline namespace wrappers instead of 'using' to avoid conflicts with hipblas declarations
-// Code should call fastllm_hip::hipblasGemmEx() etc. directly, or we use #define redirects
 #define hipblasGemmEx fastllm_hip::hipblasGemmEx
 #define hipblasHgemmStridedBatched fastllm_hip::hipblasHgemmStridedBatched
 #define hipblasHgemm fastllm_hip::hipblasHgemm
@@ -242,7 +297,6 @@ namespace fastllm_hip {
 #define checkCudaErrors(msg, val) showError(val, msg, __FILE__, __LINE__)
 #define cudaErrorNotSupported hipErrorNotSupported
 
-// HIPBLAS_GEMM_DEFAULT_TENSOR_OP may not be defined in older hipBLAS
 #ifndef HIPBLAS_GEMM_DEFAULT_TENSOR_OP
 #define HIPBLAS_GEMM_DEFAULT_TENSOR_OP HIPBLAS_GEMM_DEFAULT
 #endif
@@ -252,21 +306,13 @@ namespace fastllm_hip {
 #define cudaDevAttrComputeCapabilityMajor hipDeviceAttributeComputeCapabilityMajor
 #define cudaDevAttrComputeCapabilityMinor hipDeviceAttributeComputeCapabilityMinor
 
-// __hmul2 must be inline function, not macro
+#ifdef __HIPCC__
 static __device__ __forceinline__ half2 __hmul2_fn(half2 a, half2 b) {
     return __hmul2(a, b);
 }
-
-// __fmaf_ieee_rn -> simple multiply
 static __device__ __forceinline__ float __fmaf_ieee_rn_fn(float a, float b) {
     return a * b;
 }
+#endif
 
 #endif // __HIP_PLATFORM_AMD__
-
-
-
-
-
-
-

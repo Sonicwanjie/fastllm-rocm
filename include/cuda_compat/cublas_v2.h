@@ -1,7 +1,7 @@
 ﻿#pragma once
 // cublas compatibility shim for HIP builds
 #include <hipblas/hipblas.h>
-#include <hipblas/hipblas_v2.h>
+// #include <hipblas/hipblas_v2.h>  // not available in ROCm SDK
 
 // Type aliases
 #define cublasHandle_t hipblasHandle_t

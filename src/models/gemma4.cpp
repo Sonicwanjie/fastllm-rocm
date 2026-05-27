@@ -1,5 +1,7 @@
-#include "utils.h"
+﻿#include "utils.h"
 #include "gemma4.h"
+
+
 
 #include <sstream>
 #include <unordered_map>
@@ -918,6 +920,18 @@ namespace fastllm {
             int ple_seq = hiddenStates.dims[1];
             perLayerInputs.Reshape({ple_bsz, ple_seq, block_cnt, hidden_size_per_layer_input});
             Mul(perLayerInputs, sqrtf((float)hidden_size_per_layer_input), perLayerInputs);
+
+            // Context-aware projection: per_layer_model_projection(hiddenStates) * 1/sqrt(hidden_size)
+            Data pleContext;
+            Linear(hiddenStates, weight["model.language_model.per_layer_model_projection.weight"], *GetEmptyData(), pleContext);
+            Mul(pleContext, 1.0f / sqrtf((float)embed_dim), pleContext);
+            pleContext.Reshape({ple_bsz, ple_seq, block_cnt, hidden_size_per_layer_input});
+            RMSNorm(pleContext, weight["model.language_model.per_layer_projection_norm.weight"], rms_norm_eps, pleContext);
+            // Combine: (context + token_identity) * 1/sqrt(2)
+            perLayerInputs.ToDevice(hiddenStates.dataDevice); if (perLayerInputs.dataType != pleContext.dataType) { ToDataType(perLayerInputs, pleContext.dataType); }
+            AddTo(pleContext, perLayerInputs);
+            Mul(pleContext, sqrtf(0.5f), pleContext);
+            perLayerInputs.CopyFrom(pleContext);
         }
         // Compute KV shared source layers
         int sharedKVSlidingSourceLayer = -1;
@@ -1080,6 +1094,7 @@ namespace fastllm {
                 Linear(hiddenStates, weight[pre + ".per_layer_input_gate.weight"], *GetEmptyData(), pleGate);
                 Gelu(pleGate, pleGate);
                 // gate_output * per_layer_input
+                if (pleGate.dataType != pleSlice.dataType) { ToDataType(pleSlice, pleGate.dataType); }
                 MulTo(pleGate, pleSlice);
                 Linear(pleGate, weight[pre + ".per_layer_projection.weight"], *GetEmptyData(), pleProj);
                 if (this->weight.weight.find(pre + ".post_per_layer_input_norm.weight") != this->weight.weight.end()) { RMSNorm(pleProj, this->weight[pre + ".post_per_layer_input_norm.weight"], rms_norm_eps, pleProj); }
@@ -1113,6 +1128,19 @@ namespace fastllm {
 
         Linear(*lastHiddenStates, weight["lm_head.weight"], *GetEmptyData(), logits);
         ToDataType(logits, DataType::FLOAT32);
+        {
+            // DEBUG: Print first token logits for ForwardBatch
+            logits.ToDevice(DataDevice::CPU);
+            float *ldata = (float*)logits.cpuData;
+            int total = logits.Count(0);
+            int vocabSize = logits.dims.back();
+            int bestId = 0; float bestVal = -1e30f;
+            for (int j = 0; j < vocabSize && j < total; j++) {
+                if (ldata[j] > bestVal) { bestVal = ldata[j]; bestId = j; }
+            }
+            printf("[DEBUG] ForwardBatch: total=%d vocabSize=%d bestToken=%d bestLogit=%.4f\n", total, vocabSize, bestId, bestVal);
+            fflush(stdout);
+        }
         if (final_logit_softcapping > 0.0f) {
             Mul(logits, 1.0f / final_logit_softcapping, logits);
             logits.ToDevice(DataDevice::CPU);
@@ -1133,6 +1161,19 @@ namespace fastllm {
         }
 
 
+        {
+            // DEBUG: Print first few logits and predicted token
+            logits.ToDevice(DataDevice::CPU);
+            float *ldata = (float*)logits.cpuData;
+            int vocabSize = logits.dims.back();
+            int bestId = 0; float bestVal = -1e30f;
+            for (int j = 0; j < vocabSize; j++) {
+                if (ldata[j] > bestVal) { bestVal = ldata[j]; bestId = j; }
+            }
+            printf("[DEBUG] first ForwardTextFromHiddenStates: bestToken=%d bestLogit=%.4f logits[0..4]=[%.4f %.4f %.4f %.4f %.4f]\n",
+                   bestId, bestVal, ldata[0], ldata[1], ldata[2], ldata[3], ldata[4]);
+            fflush(stdout);
+        }
         TopK(logits, topk, 1);
         topk.ToDevice(DataDevice::CPU);
         return (int) (((float *) topk.cpuData)[0] + 1e-3);
@@ -1502,6 +1543,21 @@ namespace fastllm {
             int ple_seq = hiddenStates.dims[1];
             perLayerInputs.Reshape({ple_bsz, ple_seq, block_cnt, hidden_size_per_layer_input});
             Mul(perLayerInputs, sqrtf((float)hidden_size_per_layer_input), perLayerInputs);
+
+            // Context-aware projection: per_layer_model_projection(hiddenStates) * 1/sqrt(hidden_size)
+            Data pleContext;
+            Linear(hiddenStates, weight["model.language_model.per_layer_model_projection.weight"], *GetEmptyData(), pleContext);
+            pleContext.ToDevice(DataDevice::CUDA); // Keep on GPU to avoid CPU<->GPU ping-pong
+            Mul(pleContext, 1.0f / sqrtf((float)embed_dim), pleContext);
+            pleContext.ToDevice(DataDevice::CUDA);
+            pleContext.Reshape({ple_bsz, ple_seq, block_cnt, hidden_size_per_layer_input});
+            RMSNorm(pleContext, weight["model.language_model.per_layer_projection_norm.weight"], rms_norm_eps, pleContext);
+            pleContext.ToDevice(DataDevice::CUDA); // Keep on GPU after RMSNorm
+            // Combine: (context + token_identity) * 1/sqrt(2)
+            perLayerInputs.ToDevice(hiddenStates.dataDevice); if (perLayerInputs.dataType != pleContext.dataType) { ToDataType(perLayerInputs, pleContext.dataType); }
+            AddTo(pleContext, perLayerInputs);
+            Mul(pleContext, sqrtf(0.5f), pleContext);
+            perLayerInputs.CopyFrom(pleContext);
         }
 
         int seqlen = hiddenStates.dims[1];
@@ -1575,7 +1631,7 @@ namespace fastllm {
                 {
                     v.ToDevice(DataDevice::CPU);
                     if (v.dataType != DataType::FLOAT32) {
-                        ToDataType(v, DataType::FLOAT32);
+                        ToDataTypeForceCPU(v, DataType::FLOAT32);
                     }
                     float *vp = (float*)v.cpuData;
                     int lastDim = v.dims.back();
@@ -1846,6 +1902,18 @@ namespace fastllm {
             int ple_seq = hiddenStates.dims[1];
             perLayerInputs.Reshape({ple_bsz, ple_seq, block_cnt, hidden_size_per_layer_input});
             Mul(perLayerInputs, sqrtf((float)hidden_size_per_layer_input), perLayerInputs);
+
+            // Context-aware projection: per_layer_model_projection(hiddenStates) * 1/sqrt(hidden_size)
+            Data pleContext;
+            Linear(hiddenStates, weight["model.language_model.per_layer_model_projection.weight"], *GetEmptyData(), pleContext);
+            Mul(pleContext, 1.0f / sqrtf((float)embed_dim), pleContext);
+            pleContext.Reshape({ple_bsz, ple_seq, block_cnt, hidden_size_per_layer_input});
+            RMSNorm(pleContext, weight["model.language_model.per_layer_projection_norm.weight"], rms_norm_eps, pleContext);
+            // Combine: (context + token_identity) * 1/sqrt(2)
+            perLayerInputs.ToDevice(hiddenStates.dataDevice); if (perLayerInputs.dataType != pleContext.dataType) { ToDataType(perLayerInputs, pleContext.dataType); }
+            AddTo(pleContext, perLayerInputs);
+            Mul(pleContext, sqrtf(0.5f), pleContext);
+            perLayerInputs.CopyFrom(pleContext);
         }
 
         int seqlen = hiddenStates.dims[1];
@@ -1919,7 +1987,7 @@ namespace fastllm {
                 {
                     v.ToDevice(DataDevice::CPU);
                     if (v.dataType != DataType::FLOAT32) {
-                        ToDataType(v, DataType::FLOAT32);
+                        ToDataTypeForceCPU(v, DataType::FLOAT32);
                     }
                     float *vp = (float*)v.cpuData;
                     int lastDim = v.dims.back();

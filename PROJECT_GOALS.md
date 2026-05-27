@@ -1,4 +1,4 @@
-﻿# fastllm-windows-rocm 项目目标
+# fastllm-windows-rocm 项目目标
 
 ## 项目愿景
 
@@ -72,8 +72,8 @@
 
 ### 5. Tilelang 集成
 - [ ] Tilelang JIT → AOT 预编译 → 静态链接
-- [ ] Fused Attention Kernel (Flash Attention GQA)
-- [ ] Fused Dequant GEMV (INT4 decode 专用)
+- [x] Fused Attention Kernel (Flash Attention GQA) — astllm-flash-decode.hip created, head_dim 64/128/256/512
+- [x] Fused Dequant GEMV (INT4 decode 专用) — astllm-linear-int4gemv-mfma.hip created
 - [ ] Fused MoE Kernel
 - [ ] gfx1151 MFMA auto-tuning
 

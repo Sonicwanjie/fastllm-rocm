@@ -1,4 +1,4 @@
-//
+﻿//
 // Created by huangyuyang on 6/25/23.
 //
 
@@ -13,6 +13,10 @@
 
 #ifdef USE_CUDA
 #include "fastllm-cuda.cuh"
+#endif
+
+#ifdef USE_ROCM
+#include <hip/hip_runtime.h>
 #endif
 
 namespace fastllm {
@@ -419,6 +423,20 @@ namespace fastllm {
         }
 
         std::vector<std::pair<Data, Data> > &pastKeyValues = (*lastKeyValues);
+        // GGUF models: force KV cache to CPU to avoid GPU/CPU data thrashing
+        bool isGGUFModel = false;
+        for (auto &w : this->weight.weight) {
+            if (w.second.dataType == DataType::DATA_GGUF_FORMAT) {
+                isGGUFModel = true;
+                break;
+            }
+        }
+        if (isGGUFModel) {
+            for (auto &kv : pastKeyValues) {
+                kv.first.lockInCPU = true;
+                kv.second.lockInCPU = true;
+            }
+        }
         std::string retString = "";
         std::vector<float> results;
         // LastTokensManager tokens(1, generationConfig.last_n);

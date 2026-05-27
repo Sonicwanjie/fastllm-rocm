@@ -1,4 +1,4 @@
-#include "fastllm.h"
+﻿#include "fastllm.h"
 
 #ifdef __CUDACC__
 #include <cuda_runtime.h>
@@ -30,6 +30,8 @@ using namespace nvcuda;
 #define CUDA_NO_TENSOR_CORE
 #endif
 
+#ifndef _FASTLLM_UNION_TYPES_DEFINED
+#define _FASTLLM_UNION_TYPES_DEFINED
 typedef union __align__(16) {
     uint2 in;
     uint8_t out[8];
@@ -57,6 +59,7 @@ typedef union __align__(16) _union_half_8 {
       // Do nothing
     }
 } union_half8;
+#endif // _FASTLLM_UNION_TYPES_DEFINED
 #elif defined(USE_ROCM)
 #include "fastllm-hip.h"
 typedef hipblasHandle_t cublasHandle_t;
@@ -123,23 +126,23 @@ void * FastllmCudaDirectMalloc(size_t size);
 void FastllmCudaDirectFree(void *ret);
 void FastllmCudaMemset0(void *ret, size_t size);
 
-// 借用 FlashInfer 的 d_float_workspace 作为临时 scratch（例如 INT4 反量化为 FP16 的临时缓冲）。
-// 语义：
-//   - 当前 device 的 workspace 指针 + 字节大小通过出参返回；
-//   - 仅在两次 attention 调用之间使用是安全的，因为下一次 attention 会重新 plan 并覆盖里面的 tmp_v/tmp_s；
-//   - 调用方需自行保证调用本身是串行的（同一个 stream），且不要在 attention kernel 还在跑时使用；
-//   - 如果 workspace 还没有创建，会按默认大小（FT_FLOAT_WORKSPACE_SIZE 或 256MB）惰性分配。
-// 注意：返回的指针只是借用，不需要 free。
+// å€Ÿç”¨ FlashInfer çš„ d_float_workspace ä½œä¸ºä¸´æ—¶ scratchï¼ˆä¾‹å¦‚ INT4 åé‡åŒ–ä¸º FP16 çš„ä¸´æ—¶ç¼“å†²ï¼‰ã€‚
+// è¯­ä¹‰ï¼š
+//   - å½“å‰ device çš„ workspace æŒ‡é’ˆ + å­—èŠ‚å¤§å°é€šè¿‡å‡ºå‚è¿”å›žï¼›
+//   - ä»…åœ¨ä¸¤æ¬¡ attention è°ƒç”¨ä¹‹é—´ä½¿ç”¨æ˜¯å®‰å…¨çš„ï¼Œå› ä¸ºä¸‹ä¸€æ¬¡ attention ä¼šé‡æ–° plan å¹¶è¦†ç›–é‡Œé¢çš„ tmp_v/tmp_sï¼›
+//   - è°ƒç”¨æ–¹éœ€è‡ªè¡Œä¿è¯è°ƒç”¨æœ¬èº«æ˜¯ä¸²è¡Œçš„ï¼ˆåŒä¸€ä¸ª streamï¼‰ï¼Œä¸”ä¸è¦åœ¨ attention kernel è¿˜åœ¨è·‘æ—¶ä½¿ç”¨ï¼›
+//   - å¦‚æžœ workspace è¿˜æ²¡æœ‰åˆ›å»ºï¼Œä¼šæŒ‰é»˜è®¤å¤§å°ï¼ˆFT_FLOAT_WORKSPACE_SIZE æˆ– 256MBï¼‰æƒ°æ€§åˆ†é…ã€‚
+// æ³¨æ„ï¼šè¿”å›žçš„æŒ‡é’ˆåªæ˜¯å€Ÿç”¨ï¼Œä¸éœ€è¦ freeã€‚
 void *FastllmCudaGetFlashInferFloatWorkspace(size_t *outSize);
 
-// 借/还 dequant 用的临时 scratch buffer。
+// å€Ÿ/è¿˜ dequant ç”¨çš„ä¸´æ—¶ scratch bufferã€‚
 // FastllmBorrowDequantScratch:
-//   - needBytes: 期望大小（字节）；如果为 0，按 workspace 大小返回。
-//   - outBytes:  实际可用字节数（>= 1，可能小于 needBytes，表示需要分块）。
-//   - outOwn:    true 表示 scratch 是用 FastllmCudaMalloc 分配的，使用完必须调用 Release 归还。
-// 行为：优先借用 FlashInfer workspace；workspace 为空或大小为 0 时回退为 FastllmCudaMalloc(needBytes)。
+//   - needBytes: æœŸæœ›å¤§å°ï¼ˆå­—èŠ‚ï¼‰ï¼›å¦‚æžœä¸º 0ï¼ŒæŒ‰ workspace å¤§å°è¿”å›žã€‚
+//   - outBytes:  å®žé™…å¯ç”¨å­—èŠ‚æ•°ï¼ˆ>= 1ï¼Œå¯èƒ½å°äºŽ needBytesï¼Œè¡¨ç¤ºéœ€è¦åˆ†å—ï¼‰ã€‚
+//   - outOwn:    true è¡¨ç¤º scratch æ˜¯ç”¨ FastllmCudaMalloc åˆ†é…çš„ï¼Œä½¿ç”¨å®Œå¿…é¡»è°ƒç”¨ Release å½’è¿˜ã€‚
+// è¡Œä¸ºï¼šä¼˜å…ˆå€Ÿç”¨ FlashInfer workspaceï¼›workspace ä¸ºç©ºæˆ–å¤§å°ä¸º 0 æ—¶å›žé€€ä¸º FastllmCudaMalloc(needBytes)ã€‚
 void *FastllmBorrowDequantScratch(size_t needBytes, size_t *outBytes, bool *outOwn);
-// 与 Borrow 配对。仅当 outOwn==true 时才真正调用 FastllmCudaFree。
+// ä¸Ž Borrow é…å¯¹ã€‚ä»…å½“ outOwn==true æ—¶æ‰çœŸæ­£è°ƒç”¨ FastllmCudaFreeã€‚
 void FastllmReleaseDequantScratch(void *ptr, bool own);
 
 void FastllmCudaCopyFromHostToDevice(void *dst, void *src, size_t size);
@@ -154,7 +157,7 @@ void FastllmCudaHostFree(void *ptr);
 bool FastllmCudaHostRegister(void *ptr, size_t size);
 void FastllmCudaHostUnregister(void *ptr);
 
-// 将 host 端数据拷到 GPU 临时缓冲区，按数据类型加到 dst（GPU）上，len 为元素个数
+// å°† host ç«¯æ•°æ®æ‹·åˆ° GPU ä¸´æ—¶ç¼“å†²åŒºï¼ŒæŒ‰æ•°æ®ç±»åž‹åŠ åˆ° dstï¼ˆGPUï¼‰ä¸Šï¼Œlen ä¸ºå…ƒç´ ä¸ªæ•°
 void FastllmCudaAddHostToDevice(void *dst, void *hostSrc, int len, fastllm::DataType dataType);
 void FastllmCudaMemcpyBetweenDevices(int dstId, void *dst, int srcId, void *src, size_t size);
 
@@ -280,12 +283,12 @@ bool FastllmCudaDeepSeekV4HcPostCudaMix(const fastllm::Data &x, const fastllm::D
                                         const fastllm::Data &post, const fastllm::Data &comb,
                                         int bsz, int seqlen, int hcMult, int dim,
                                         fastllm::Data &output);
-// 计算每个 outer 行在 [start, end) 范围内的 sum(x^2) (FP32)，用于多卡 RMSNorm 的跨卡归约。
-// outer 与通道的物理布局来自 input；output sumOut 长度为 outer。
-// 同时如果 copyInput == true 且 input != outputBuffer，会把 input 完整内容拷到 outputBuffer（用于后续 apply 阶段就地写回）。
+// è®¡ç®—æ¯ä¸ª outer è¡Œåœ¨ [start, end) èŒƒå›´å†…çš„ sum(x^2) (FP32)ï¼Œç”¨äºŽå¤šå¡ RMSNorm çš„è·¨å¡å½’çº¦ã€‚
+// outer ä¸Žé€šé“çš„ç‰©ç†å¸ƒå±€æ¥è‡ª inputï¼›output sumOut é•¿åº¦ä¸º outerã€‚
+// åŒæ—¶å¦‚æžœ copyInput == true ä¸” input != outputBufferï¼Œä¼šæŠŠ input å®Œæ•´å†…å®¹æ‹·åˆ° outputBufferï¼ˆç”¨äºŽåŽç»­ apply é˜¶æ®µå°±åœ°å†™å›žï¼‰ã€‚
 bool FastllmCudaRMSNormPartSum2(const fastllm::Data &input, float *sumOut, int start, int end);
-// 给定外部已经聚合好的 sumIn（长度 outer，FP32），按 partChannelsGlobal 计算 scale，并对 input[start:end) 做 weight * scale 写到 output。
-// input == output 时为 in-place 操作；start/end 可以是 input 局部坐标，weight 物理上是与 partLocal 对齐的局部权重。
+// ç»™å®šå¤–éƒ¨å·²ç»èšåˆå¥½çš„ sumInï¼ˆé•¿åº¦ outerï¼ŒFP32ï¼‰ï¼ŒæŒ‰ partChannelsGlobal è®¡ç®— scaleï¼Œå¹¶å¯¹ input[start:end) åš weight * scale å†™åˆ° outputã€‚
+// input == output æ—¶ä¸º in-place æ“ä½œï¼›start/end å¯ä»¥æ˜¯ input å±€éƒ¨åæ ‡ï¼Œweight ç‰©ç†ä¸Šæ˜¯ä¸Ž partLocal å¯¹é½çš„å±€éƒ¨æƒé‡ã€‚
 bool FastllmCudaRMSNormPartApply(const fastllm::Data &input, fastllm::Data &weight, fastllm::Data &output, const float *sumIn, float eps, int start, int end, int partChannelsGlobal);
 bool FastllmCudaRMSNormSiluMulFloat16(const fastllm::Data &input, fastllm::Data &weight, const fastllm::Data &gateInput, fastllm::Data &output, float eps);
 bool FastllmCudaLayerNorm(const fastllm::Data &input, fastllm::Data &gamma, fastllm::Data &beta, fastllm::Data &output, int axis);
@@ -346,9 +349,9 @@ bool FastllmCudaQKVRMSNormRope(fastllm::Data &qkv, fastllm::Data &qNormWeight, f
                                 const fastllm::Data &positionIds,
                                 int q_heads, int k_heads, int head_dim,
                                 int rotateDim, float eps, float ropeTheta, float ropeScale);
-// 融合 QKVRMSNormRope + Split KV + AppendPagedCacheBatch
+// èžåˆ QKVRMSNormRope + Split KV + AppendPagedCacheBatch
 // qkv: [bs, seqlen, total_dim], qOutput: [bs*q_heads, seqlen, head_dim] (permuted)
-// K/V 直接写入 paged cache
+// K/V ç›´æŽ¥å†™å…¥ paged cache
 bool FastllmCudaQKVRMSNormRopeSplitAppendPagedCache(
     fastllm::Data &qkv, fastllm::Data &qNormWeight, fastllm::Data &kNormWeight,
     const fastllm::Data &positionIds,

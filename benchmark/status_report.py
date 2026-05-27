@@ -1,0 +1,157 @@
+﻿"""
+status_report.py - Generate benchmark status report for current system state.
+
+Captures:
+1. Which models load successfully
+2. Which models produce correct output
+3. Current decode throughput where available
+4. Known blockers
+"""
+
+import json, os, time
+from datetime import datetime
+
+RESULT_DIR = r"C:\Users\q\.openclaw\workspace\fastllm-rocm\benchmark\results"
+
+report = {
+    "timestamp": datetime.now().isoformat(),
+    "system": {
+        "gpu": "AMD Radeon 8060S (gfx1151, RDNA3.5)",
+        "vram_gb": 69,
+        "os": "Windows 11",
+        "rocm": "HIP SDK 7.x",
+        "compiler": "MSVC 2026 (host) + hipClang (kernel)",
+    },
+    "models": {
+        "gemma4-e2b-bf16": {
+            "path": "models/gemma-4-e2b-it (safetensors, 9.55 GB)",
+            "load": "OK (9s)",
+            "inference": "CRASH - hipErrorLaunchFailure in PLE (Per-Layer Embedding)",
+            "correctness": "N/A - crashes before producing output",
+            "decode_throughput": "N/A - crashes before producing output",
+            "error_detail": "input0.type=7 (INT4) conflicts with input1.type=0 in AddTo during PLE fusion. "
+                           "The per_layer_input embeddings are loaded as INT4 but AddTo expects float32/float16/bfloat16.",
+            "blocker": "Phase 1: PLE type mismatch - embed_tokens_per_layer.weight is quantized to INT4 "
+                       "but PLE code tries to add it directly to hidden states",
+            "fix_needed": "Add dequantization step for per-layer embeddings before AddTo, "
+                         "or load embed_tokens_per_layer.weight as BF16 regardless of --dtype",
+        },
+        "gemma4-e2b-gguf": {
+            "path": "gemma-4-E2B-it-Q4_K_M.gguf (3.19 GB)",
+            "load": "FAIL - unsupported weight types (layer_output_scale.weight)",
+            "inference": "N/A",
+            "correctness": "N/A",
+            "decode_throughput": "N/A",
+            "error_detail": "WeightImportGGUFTensor: weight blk.8.layer_output_scale.weight(type f32) can't convert to fp32",
+            "blocker": "GGUF loader doesn't support Gemma 4's layer_output_scale weights",
+            "fix_needed": "Add Gemma 4 specific weight handling in GGUF adapter",
+        },
+        "gemma4-e2b-int4": {
+            "path": "models/gemma-4-e2b-it (safetensors, INT4)",
+            "load": "Likely OK (same as BF16)",
+            "inference": "NOT TESTED - same PLE crash expected",
+            "correctness": "N/A",
+            "decode_throughput": "N/A",
+            "blocker": "Same PLE issue as BF16",
+        },
+        "qwen3.6-27b-gguf": {
+            "path": "Qwen3.6-27B-Q4_K_M.gguf (15.41 GB)",
+            "load": "FAIL - architecture 'qwen35' not recognized",
+            "inference": "N/A",
+            "correctness": "N/A",
+            "decode_throughput": "N/A",
+            "error_detail": "Qwen3.6 uses hybrid SSM+Attention architecture (Mamba-style layers with ssm_a, ssm_conv1d, etc.) "
+                           "which is not supported by the qwen3_5 model handler",
+            "blocker": "Qwen3.6 is a new architecture with SSM (State Space Model) blocks not in fastllm",
+            "fix_needed": "Either add SSM block support to qwen3_5 or create new model type qwen3_6",
+            "note": "GGUF type mapping was fixed (qwen35 -> qwen3_5) but model handler doesn't understand SSM weights",
+        },
+    },
+    "kernel_status": {
+        "old_wmma_kernels": {
+            "linear_fp16": "Working (hipBLAS fallback for large GEMM, custom GEMV for M=1)",
+            "linear_bf16": "Working (with FP16 conversion overhead)",
+            "attention_decode": "Working (3-pass Q*K^T + softmax + attn*V, WMMA 16x16)",
+            "attention_prefill": "Working (FlashInfer-based, may fallback for gfx1151)",
+            "int4_dequant": "Working (separate dequant + GEMM)",
+            "issue": "WMMA 16x16 has ~6% utilization for M=1 decode (only 1 row used out of 16)",
+        },
+        "new_tilelang_mfma_kernels": {
+            "tl_flash_decode": "Generated but NOT integrated (needs tilelang templates/headers)",
+            "tl_dequant_gemv_int4": "Generated but NOT integrated",
+            "tl_dequant_gemm_int4_batch": "Generated but NOT integrated",
+            "tl_fused_moe": "Stub only (11 lines)",
+            "tl_mla_decode": "Generated but NOT integrated",
+            "status": "All tilelang kernels are generated AOT .hip files but not compiled into the build",
+            "blocker": "Need tilelang template headers (tl_templates/hip/*.h) for compilation",
+        },
+    },
+    "timing_probe_results": {
+        "note": "No successful decode run yet, timing probes cannot be measured",
+        "estimated_from_previous_runs": {
+            "gemma4_e2b_bf16_decode": "~20-23 tok/s (from previous working runs before PLE regression)",
+            "target_decode": ">40 tok/s (FP16/BF16), >80 tok/s (INT4)",
+        },
+    },
+    "phase_status": {
+        "phase1_gemma4_correctness": {
+            "status": "BLOCKED",
+            "remaining": [
+                "Fix PLE type mismatch (embed_tokens_per_layer.weight dequantization)",
+                "Implement KV shared layers (num_kv_shared_layers=20)",
+                "Fix partial rotary factor for full_attention layers (partial_rotary_factor=0.25)",
+                "Validate chat template (thinking mode tokens)",
+            ],
+        },
+        "phase2_decode_benchmark": {
+            "status": "BLOCKED (depends on Phase 1)",
+            "ready": [
+                "benchmark_timer.h - GPU timing probes (hipEvent-based)",
+                "probe_decode_timing.py - External per-token timing analysis",
+                "bench_gemma4_decode.py - Gemma 4 specific benchmark",
+                "run_benchmark.py - Unified benchmark runner",
+            ],
+            "waiting_for": "Phase 1 completion to get correct model output",
+        },
+    },
+    "code_changes_made": {
+        "gguf_type_mapping": "Added {'qwen35', 'qwen3_5'} to ConvertGGUFTypeToFastllmType in model.cpp:1794",
+        "benchmark_suite": "Created benchmark/ directory with 4 scripts + timer header + README",
+    },
+}
+
+os.makedirs(RESULT_DIR, exist_ok=True)
+path = os.path.join(RESULT_DIR, f"status_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(report, f, indent=2, ensure_ascii=False)
+
+# Print summary
+print("=" * 80)
+print(" BENCHMARK STATUS REPORT")
+print("=" * 80)
+print(f"\nTimestamp: {report['timestamp']}")
+print(f"GPU: {report['system']['gpu']}")
+print(f"VRAM: {report['system']['vram_gb']} GB\n")
+
+print("MODEL STATUS:")
+print("-" * 80)
+for name, m in report["models"].items():
+    status = "OK" if m["load"] == "OK" or "OK" in m["load"] else "BLOCKED"
+    print(f"  {name:<25} Load: {m['load'][:40]}")
+    print(f"  {'':25} Inference: {m['inference'][:40]}")
+    if "blocker" in m:
+        print(f"  {'':25} Blocker: {m['blocker'][:60]}")
+    print()
+
+print("KERNEL STATUS:")
+print("-" * 80)
+print(f"  Old (WMMA): {report['kernel_status']['old_wmma_kernels']['linear_fp16'][:60]}")
+print(f"  New (MFMA): {report['kernel_status']['new_tilelang_mfma_kernels']['status'][:60]}")
+
+print("\nPHASE STATUS:")
+print("-" * 80)
+for phase, info in report["phase_status"].items():
+    print(f"  {phase}: {info['status']}")
+
+print(f"\nFull report saved to: {path}")
+print("=" * 80)

@@ -1,0 +1,8 @@
+{
+  "model": "qwen36",
+  "model_name": "Qwen3.6-27B Q4_K_M",
+  "timestamp": "2026-05-27T22:17:06.831563",
+  "load_time": 300,
+  "tests": [],
+  "error": "load_failed"
+}

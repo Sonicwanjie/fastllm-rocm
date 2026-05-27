@@ -1,4 +1,4 @@
-//
+﻿//
 // Created by huangyuyang on 6/14/23.
 //
 
@@ -174,6 +174,11 @@ namespace fastllm {
     void CudaToFloat16::Run(const std::string &opType, const fastllm::DataDict &datas,
                            const fastllm::FloatDict &floatParams, const fastllm::IntDict &intParams) {
         Data &data = *(datas.find("input")->second);
+
+        // If input is on CPU, copy it to GPU first (happens when Embedding runs on CPU for GGUF models)
+        if (data.dataDevice == DataDevice::CPU) {
+            data.ToDevice(DataDevice::CUDA);
+        }
         if (data.dataType == DataType::FLOAT16) {
             return;
         }
@@ -206,6 +211,11 @@ namespace fastllm {
     void CudaToFloat32::Run(const std::string &opType, const fastllm::DataDict &datas,
                            const fastllm::FloatDict &floatParams, const fastllm::IntDict &intParams) {
         Data &data = *(datas.find("input")->second);
+
+        // If input is on CPU, copy it to GPU first
+        if (data.dataDevice == DataDevice::CPU) {
+            data.ToDevice(DataDevice::CUDA);
+        }
         if (data.dataType == DataType::FLOAT32) {
             return;
         }
@@ -254,6 +264,12 @@ namespace fastllm {
                            const fastllm::FloatDict &floatParams, const fastllm::IntDict &intParams) {
         Data &input = *(datas.find("input")->second);
         Data &output = *(datas.find("output")->second);
+        
+        // If input is on CPU, copy it to GPU first (happens when Embedding runs on CPU for GGUF models)
+        if (input.dataDevice == DataDevice::CPU) {
+            input.ToDevice(DataDevice::CUDA);
+        }
+        
         output.Allocate(false);
         if (input.dataType == DataType::FLOAT16) {
             FastllmCudaCopyFromDeviceToDevice(output.cudaData, input.cudaData, input.GetBytes());
@@ -283,6 +299,12 @@ namespace fastllm {
                            const fastllm::FloatDict &floatParams, const fastllm::IntDict &intParams) {
         Data &input = *(datas.find("input")->second);
         Data &output = *(datas.find("output")->second);
+        
+        // If input is on CPU, copy it to GPU first
+        if (input.dataDevice == DataDevice::CPU) {
+            input.ToDevice(DataDevice::CUDA);
+        }
+        
         output.Allocate(false);
         if (input.dataType == DataType::FLOAT32) {
             FastllmCudaCopyFromDeviceToDevice(output.cudaData, input.cudaData, input.GetBytes());
@@ -300,6 +322,11 @@ namespace fastllm {
     void CudaToBFloat16::Run(const std::string &opType, const fastllm::DataDict &datas,
                            const fastllm::FloatDict &floatParams, const fastllm::IntDict &intParams) {
         Data &data = *(datas.find("input")->second);
+
+        // If input is on CPU, copy it to GPU first
+        if (data.dataDevice == DataDevice::CPU) {
+            data.ToDevice(DataDevice::CUDA);
+        }
         if (data.dataType == DataType::BFLOAT16) {
             return;
         }
@@ -344,6 +371,12 @@ namespace fastllm {
                            const fastllm::FloatDict &floatParams, const fastllm::IntDict &intParams) {
         Data &input = *(datas.find("input")->second);
         Data &output = *(datas.find("output")->second);
+        
+        // If input is on CPU, copy it to GPU first
+        if (input.dataDevice == DataDevice::CPU) {
+            input.ToDevice(DataDevice::CUDA);
+        }
+        
         output.Allocate(false);
         if (input.dataType == DataType::BFLOAT16) {
             FastllmCudaCopyFromDeviceToDevice(output.cudaData, input.cudaData, input.GetBytes());
@@ -3564,7 +3597,29 @@ total += weights[nextExpert * 2 + 1]->GetBytes();
     }
 
     void DoCudaAttentionPaged(Data &q, Data &k, Data &v, Data &output, int group, float scale, bool inited) {
-        FastllmCudaHalfPagedAttention(q, k, v, output, group, scale, inited);
+        if (q.dataType == DataType::FLOAT32) {
+            // FP32 path: convert q to FP16, use FP16 KV cache, convert output back to FP32
+            Data qFp16;
+            qFp16.dtype = DataType::FLOAT16;
+            qFp16.dataType = DataType::FLOAT16;
+            qFp16.Resize(q.dims);
+            qFp16.Allocate(false);
+            FastllmCudaConvertFp32ToFp16((half*)qFp16.cudaData, (const float*)q.cudaData, q.Count(0));
+
+            // output in FP16
+            Data outFp16;
+            outFp16.dtype = DataType::FLOAT16;
+            outFp16.dataType = DataType::FLOAT16;
+            outFp16.Resize(output.dims);
+            outFp16.Allocate(false);
+
+            FastllmCudaHalfPagedAttention(qFp16, k, v, outFp16, group, scale, inited);
+
+            // Convert output back to FP32
+            FastllmCudaConvertFp16ToFp32((float*)output.cudaData, (const half*)outFp16.cudaData, output.Count(0));
+        } else {
+            FastllmCudaHalfPagedAttention(q, k, v, output, group, scale, inited);
+        }
     }
 
     void CudaAttentionPagedOp::Run(const std::string &opType, const fastllm::DataDict &datas,

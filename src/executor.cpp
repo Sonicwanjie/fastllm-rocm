@@ -1,4 +1,4 @@
-//
+﻿//
 // Created by huangyuyang on 6/13/23.
 //
 
@@ -132,7 +132,7 @@ namespace fastllm {
         auto st = std::chrono::system_clock::now();
         bool lockInCPU = false;
         if (GetKVCacheInCPU() || GetHistoryCacheInCPU()) {
-            // 暂时只有kvcache可能lock在CPU上
+            // æš‚æ—¶åªæœ‰kvcacheå¯èƒ½lockåœ¨CPUä¸Š
             for (auto &it: datas) {
                 if (intParams.find(it.first + "___batch") != intParams.end()) {
                     int batch = intParams.find(it.first + "___batch")->second;

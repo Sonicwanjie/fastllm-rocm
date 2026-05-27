@@ -859,9 +859,34 @@ namespace fastllm {
             } else if (type == GGUF_TYPE_ARRAY) {
                 int type = ggufBuffer.Read <int> ();
                 uint64_t n = ggufBuffer.Read <uint64_t> ();
-                // skip large tokenizer arrays to avoid memory issues with json11
-                if (key.find("tokenizer.ggml.") == 0) {
-                    for (int i = 0; i < n; i++) {
+                // Store tokenizer.ggml.tokens as string array (needed for tokenizer init)
+                // Skip other large tokenizer arrays to avoid memory issues
+                if (key == "tokenizer.ggml.tokens" && type == GGUF_TYPE_STRING) {
+                    std::vector <std::string> value;
+                    for (int i = 0; i < (int)n; i++) {
+                        value.push_back(ggufBuffer.ReadString());
+                    }
+                    paramsConfig[key] = value;
+                } else if (key == "tokenizer.ggml.scores" && type == GGUF_TYPE_FLOAT32) {
+                    std::vector <float> value;
+                    for (int i = 0; i < (int)n; i++) {
+                        value.push_back(ggufBuffer.Read <float> ());
+                    }
+                    std::string s;
+                    for (int i = 0; i < (int)value.size(); i++) {
+                        if (i > 0) s += ",";
+                        s += std::to_string(value[i]);
+                    }
+                    paramsConfig[key] = s;
+                } else if (key == "tokenizer.ggml.token_type" && type == GGUF_TYPE_INT32) {
+                    std::vector <int> value;
+                    for (int i = 0; i < (int)n; i++) {
+                        value.push_back(ggufBuffer.Read <int> ());
+                    }
+                    paramsConfig[key] = value;
+                } else if (key.find("tokenizer.ggml.") == 0) {
+                    // Skip other large tokenizer arrays
+                    for (int i = 0; i < (int)n; i++) {
                         if (type == GGUF_TYPE_STRING) {
                             uint64_t slen = ggufBuffer.Read <uint64_t> ();
                             std::vector <char> tmp;

@@ -1,4 +1,4 @@
-//
+﻿//
 // Created by huangyuyang on 6/2/23.
 //
 #pragma once
@@ -17,7 +17,7 @@
 #include <vector>
 #include <deque>
 #include <array>
-#ifndef __CUDACC__
+#if !defined(__CUDACC__) || defined(_MSC_VER)
 #if defined(__GNUC__) && __GNUC__ < 8 && !defined(__clang__)
 #include <experimental/filesystem>
 #else
@@ -43,7 +43,7 @@
 #endif
 #endif
 
-#ifndef __CUDACC__
+#if !defined(__CUDACC__) || defined(_MSC_VER)
 #if (defined(_MSC_VER) && _MSC_VER <= 1900) || (defined(__GNUC__) && __GNUC__ < 8 && !defined(__clang__))  // VS 2015) 
     namespace fs = std::experimental::filesystem;
 #else
