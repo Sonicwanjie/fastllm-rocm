@@ -2267,7 +2267,7 @@ printf("len = %d, spend = %f s. tokens / s = %f\n", (int)total, spend, (float)to
     }
 
     std::string basellm::ApplyChatTemplate(const ChatMessages &messages) {
-        if (this->weight.tokenizer.chatTemplate == "") {
+        if (this->weight.tokenizer.chatTemplate == "" || this->weight.tokenizer.chatTemplate.find("macro") != std::string::npos) {
             std::string ret = "";
             std::string user = "";
             int round = 0;

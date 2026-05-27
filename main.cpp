@@ -157,7 +157,12 @@ int main(int argc, char **argv) {
             break;
         }
         messages.push_back(std::make_pair("user", input));
-        std::string ret = model->Response(model->ApplyChatTemplate(messages), [](int index, const char* content) {
+        std::string prompt = model->ApplyChatTemplate(messages);
+        printf("DEBUG: prompt=[%s] (len=%d)\n", prompt.c_str(), (int)prompt.size());
+        fflush(stdout);
+        std::string ret;
+        try {
+            ret = model->Response(prompt, [](int index, const char* content) {
             if (index == 0) {
                 printf("%s:%s", modelType.c_str(), content);
                 fflush(stdout);
@@ -170,6 +175,13 @@ int main(int argc, char **argv) {
                 printf("\n");
             }
         }, generationConfig);
+        } catch (const std::exception& e) {
+            printf("EXCEPTION: %s\n", e.what());
+            ret = "";
+        } catch (...) {
+            printf("EXCEPTION: unknown exception\n");
+            ret = "";
+        }
         messages.push_back(std::make_pair("assistant", ret));
     }
 
