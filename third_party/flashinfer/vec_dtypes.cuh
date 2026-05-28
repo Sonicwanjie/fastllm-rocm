@@ -439,7 +439,7 @@ struct vec_cast<__nv_fp8_e4m3, half> {
 #else
 #pragma unroll
     for (size_t i = 0; i < vec_size; ++i) {
-      dst[i] = __nv_fp8_e4m3(src[i]);
+      dst[i] = static_cast<__nv_fp8_e4m3>(static_cast<float>(src[i]));
     }
 #endif  // FLASHINFER_HARDWARE_FP8_CONVERSION_ENABLED
   }
@@ -464,7 +464,7 @@ struct vec_cast<__nv_fp8_e5m2, half> {
 #else
 #pragma unroll
     for (size_t i = 0; i < vec_size; ++i) {
-      dst[i] = __nv_fp8_e5m2(src[i]);
+      dst[i] = static_cast<__nv_fp8_e5m2>(static_cast<float>(src[i]));
     }
 #endif  // FLASHINFER_HARDWARE_FP8_CONVERSION_ENABLED
   }

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (c) 2023 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -776,6 +776,7 @@ hipError_t BatchDecodeWithPagedKVCacheDispatched(Params params, typename Params:
       dim3 nthrs(bdx, bdy, bdz);
 
       // PDL launch config
+#ifndef USE_ROCM
       cudaLaunchAttribute attribute[1];
       cudaLaunchConfig_t config;
       if (enable_pdl) {
@@ -788,10 +789,12 @@ hipError_t BatchDecodeWithPagedKVCacheDispatched(Params params, typename Params:
         config.dynamicSmemBytes = smem_size;
         config.stream = stream;
       }
+#endif // USE_ROCM
       if (tmp_v == nullptr) {
         // do not use partition-kv kernel
         params.partition_kv = false;
 
+#ifndef USE_ROCM
         if (enable_pdl) {
           FLASHINFER_HIP_CALL(cudaLaunchKernelEx(&config, kernel, params));
         } else {
@@ -799,6 +802,11 @@ hipError_t BatchDecodeWithPagedKVCacheDispatched(Params params, typename Params:
           FLASHINFER_HIP_CALL(
               cudaLaunchKernel((void*)kernel, nblks, nthrs, args, smem_size, stream));
         }
+#else
+          void* args[] = {(void*)&params};
+          FLASHINFER_HIP_CALL(
+              cudaLaunchKernel((void*)kernel, nblks, nthrs, args, smem_size, stream));
+#endif
       } else {
         // use partition-kv kernel
         params.partition_kv = true;
@@ -806,6 +814,7 @@ hipError_t BatchDecodeWithPagedKVCacheDispatched(Params params, typename Params:
         auto lse = params.lse;
         params.o = tmp_v;
         params.lse = tmp_s;
+#ifndef USE_ROCM
         if (enable_pdl) {
           FLASHINFER_HIP_CALL(cudaLaunchKernelEx(&config, kernel, params));
         } else {
@@ -813,6 +822,11 @@ hipError_t BatchDecodeWithPagedKVCacheDispatched(Params params, typename Params:
           FLASHINFER_HIP_CALL(
               cudaLaunchKernel((void*)kernel, nblks, nthrs, args, smem_size, stream));
         }
+#else
+          void* args[] = {(void*)&params};
+          FLASHINFER_HIP_CALL(
+              cudaLaunchKernel((void*)kernel, nblks, nthrs, args, smem_size, stream));
+#endif
         if constexpr (AttentionVariant::use_softmax) {
           FLASHINFER_HIP_CALL(VariableLengthMergeStates(
               tmp_v, tmp_s, params.o_indptr, o, lse, params.paged_kv.batch_size, nullptr,
@@ -1135,6 +1149,7 @@ hipError_t BatchDecodeWithPagedKVCacheDispatchedMLA(Params params, typename Para
     dim3 nthrs(bdx, bdy, bdz);
 
     // PDL launch config
+#ifndef USE_ROCM
     cudaLaunchAttribute attribute[1];
     cudaLaunchConfig_t config;
     if (enable_pdl) {
@@ -1147,10 +1162,12 @@ hipError_t BatchDecodeWithPagedKVCacheDispatchedMLA(Params params, typename Para
       config.dynamicSmemBytes = smem_size;
       config.stream = stream;
     }
+#endif // USE_ROCM
 
     if (tmp_v == nullptr) {
       // do not use partition-kv kernel
       params.partition_kv = false;
+#ifndef USE_ROCM
       if (enable_pdl) {
         FLASHINFER_HIP_CALL(cudaLaunchKernelEx(&config, kernel, params));
       } else {
@@ -1158,6 +1175,11 @@ hipError_t BatchDecodeWithPagedKVCacheDispatchedMLA(Params params, typename Para
         FLASHINFER_HIP_CALL(
             cudaLaunchKernel((void*)kernel, nblks, nthrs, args, smem_size, stream));
       }
+#else
+        void* args[] = {(void*)&params};
+        FLASHINFER_HIP_CALL(
+            cudaLaunchKernel((void*)kernel, nblks, nthrs, args, smem_size, stream));
+#endif
     } else {
       // use partition-kv kernel
       params.partition_kv = true;
@@ -1165,6 +1187,7 @@ hipError_t BatchDecodeWithPagedKVCacheDispatchedMLA(Params params, typename Para
       auto lse = params.lse;
       params.o = tmp_v;
       params.lse = tmp_s;
+#ifndef USE_ROCM
       if (enable_pdl) {
         FLASHINFER_HIP_CALL(cudaLaunchKernelEx(&config, kernel, params));
       } else {
@@ -1172,6 +1195,11 @@ hipError_t BatchDecodeWithPagedKVCacheDispatchedMLA(Params params, typename Para
         FLASHINFER_HIP_CALL(
             cudaLaunchKernel((void*)kernel, nblks, nthrs, args, smem_size, stream));
       }
+#else
+        void* args[] = {(void*)&params};
+        FLASHINFER_HIP_CALL(
+            cudaLaunchKernel((void*)kernel, nblks, nthrs, args, smem_size, stream));
+#endif
       FLASHINFER_HIP_CALL(VariableLengthMergeStates(
           tmp_v, tmp_s, params.o_indptr, o, lse, params.paged_kv.batch_size, nullptr, num_qo_heads,
           HEAD_DIM_CKV, enable_pdl, stream));

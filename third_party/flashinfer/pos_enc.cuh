@@ -1,4 +1,7 @@
-﻿/*
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+/*
  * Copyright (c) 2023 by FlashInfer team.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
