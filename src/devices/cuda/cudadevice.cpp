@@ -439,6 +439,17 @@ namespace fastllm {
             FastllmCudaHalfAttention(q, k, v, mask, output, group, scale, maskType);
 #endif
         }
+        else if (q.dataType == DataType::BFLOAT16) {
+            Data q32, k32, v32, mask32, output32;
+            ToDataType(q, q32, DataType::FLOAT32);
+            ToDataType(k, k32, DataType::FLOAT32);
+            ToDataType(v, v32, DataType::FLOAT32);
+            ToDataType(output, output32, DataType::FLOAT32);
+            if (mask.dims.size() > 0)
+                ToDataType(mask, mask32, DataType::FLOAT32);
+            FastllmCudaAttention(q32, k32, v32, mask32, output32, group, scale, maskType);
+            ToDataType(output32, output, DataType::BFLOAT16);
+        }
     }
 
     void CudaAttention::Run(const std::string &opType, const fastllm::DataDict &datas,
@@ -483,6 +494,7 @@ namespace fastllm {
 
     bool CudaRMSNormOp::CanRun(const std::string &opType, const fastllm::DataDict &datas,
                                const fastllm::FloatDict &floatParams, const fastllm::IntDict &intParams) {
+        return true;
     }
 
     void CudaRMSNormOp::Run(const std::string &opType, const fastllm::DataDict &datas,
@@ -504,6 +516,7 @@ namespace fastllm {
 
     bool CudaRMSNormPartOp::CanRun(const std::string &opType, const fastllm::DataDict &datas,
                                const fastllm::FloatDict &floatParams, const fastllm::IntDict &intParams) {
+        return true;
     }
 
     void CudaRMSNormPartOp::Run(const std::string &opType, const fastllm::DataDict &datas,

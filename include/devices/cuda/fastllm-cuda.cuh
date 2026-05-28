@@ -291,6 +291,7 @@ bool FastllmCudaRMSNormPartSum2(const fastllm::Data &input, float *sumOut, int s
 // input == output æ—¶ä¸º in-place æ“ä½œï¼›start/end å¯ä»¥æ˜¯ input å±€éƒ¨åæ ‡ï¼Œweight ç‰©ç†ä¸Šæ˜¯ä¸Ž partLocal å¯¹é½çš„å±€éƒ¨æƒé‡ã€‚
 bool FastllmCudaRMSNormPartApply(const fastllm::Data &input, fastllm::Data &weight, fastllm::Data &output, const float *sumIn, float eps, int start, int end, int partChannelsGlobal);
 bool FastllmCudaRMSNormSiluMulFloat16(const fastllm::Data &input, fastllm::Data &weight, const fastllm::Data &gateInput, fastllm::Data &output, float eps);
+bool FastllmCudaRMSNormNoScale(fastllm::Data &input, float eps);
 bool FastllmCudaLayerNorm(const fastllm::Data &input, fastllm::Data &gamma, fastllm::Data &beta, fastllm::Data &output, int axis);
 bool FastllmCudaTopK(const fastllm::Data &input, fastllm::Data &output, int topk);
 bool FastllmCudaSelectExpert(const fastllm::Data &logits, const fastllm::Data *gateBias, 
