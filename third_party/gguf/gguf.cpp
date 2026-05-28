@@ -786,7 +786,7 @@ namespace fastllm {
             int ret = fread(oriData.data(), 1, ggml_nbytes(tensor), fi);
             fclose(fi);
 
-            if (tensor->type == GGML_TYPE_F32) {
+            if (tensor->type == GGML_TYPE_F32 || ggml_type_size(tensor->type) == sizeof(float)) {
                 // F32 to F32: direct memcpy
                 memcpy(weight->cpuData, oriData.data(), ggml_nbytes(tensor));
             } else {
