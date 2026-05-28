@@ -98,7 +98,8 @@ namespace fastllm {
             if (data.directMemory) {
                 FastllmCudaDirectFree(ptr);
             } else {
-                FastllmCudaFree(ptr);
+                // UMA-allocated memory needs hipHostFree, not hipFree
+                FastllmCudaFreeUMA(ptr);
             }
         }
 #endif
@@ -2237,11 +2238,14 @@ namespace fastllm {
                         }
 #endif
                         if (this->cudaData == nullptr) {
-                            this->cudaData = CudaMallocForData(*this, expansionBytes);
+                            // On UMA (integrated GPU): hipHostMallocMapped for zero-copy
+                            this->cudaData = FastllmCudaMallocUMA(expansionBytes);
                         }
 
                         if (cpuData != nullptr) {
-                            FastllmCudaCopyFromHostToDevice(this->cudaData, cpuData, expansionBytes);
+                            // UMA: memcpy to pinned memory (same physical RAM)
+                            // Non-UMA: hipMemcpy H2D via PCIe
+                            FastllmCudaCopyToUMA(this->cudaData, cpuData, expansionBytes);
                         } else if (!this->numasData.empty() && this->dims.size() == 2) {
                             int numaCnt = this->numasData.size();
                             int k = this->dims[0], m = this->dims[1];
@@ -2270,7 +2274,7 @@ namespace fastllm {
 #endif
                     } else {
                         if (this->cudaData == nullptr) {
-                            this->cudaData = CudaMallocForData(*this, expansionBytes);
+                            this->cudaData = FastllmCudaMallocUMA(expansionBytes);
                         }
                     }
                 }
@@ -2298,7 +2302,7 @@ namespace fastllm {
                     int destDevice = deviceIds.size() == 0 ? 0 : deviceIds[0];
                     if (sourceDevice != destDevice) {
                                         FastllmCudaSetDevice(destDevice);
-                                        void *newCudaData = CudaMallocForData(*this, expansionBytes);
+                                        void *newCudaData = FastllmCudaMallocUMA(expansionBytes);
                                         if (copyData) {
                                             FastllmCudaMemcpyBetweenDevices(destDevice, newCudaData, sourceDevice, this->cudaData, expansionBytes);
                                         }

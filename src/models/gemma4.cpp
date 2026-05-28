@@ -383,16 +383,35 @@ namespace fastllm {
         }
 
         {
-            int ropeAngles = (int)(global_partial_rotary_factor * global_head_dim / 2);
             int totalHalf = global_head_dim / 2;
-            int nopeAngles = totalHalf - ropeAngles;
 
             std::vector<float> invFreq;
-            for (int i = 0; i < ropeAngles; i++) {
-                invFreq.push_back(1.0f / pow(global_rope_base, (float)(2 * i) / (float)global_head_dim));
-            }
-            for (int i = 0; i < nopeAngles; i++) {
-                invFreq.push_back(0.0f);
+
+            // Check for proportional RoPE frequency factors (from rope_freqs.weight)
+            if (weight.weight.find("model.rope_freqs") != weight.weight.end()) {
+                auto &rf = weight["model.rope_freqs"];
+                rf.ToDevice(DataDevice::CPU);
+                if (rf.dataType != DataType::FLOAT32) {
+                    Data rfCpu;
+                    rfCpu.CopyFrom(rf);
+                    ToDataType(rfCpu, DataType::FLOAT32);
+                    rf.CopyFrom(rfCpu);
+                }
+                float *rfData = (float*)rf.cpuData;
+                int rfCount = rf.Count(0);
+                invFreq.resize(totalHalf, 0.0f);
+                for (int i = 0; i < totalHalf && i < rfCount; i++) {
+                    invFreq[i] = rfData[i];
+                }
+            } else {
+                int ropeAngles = (int)(global_partial_rotary_factor * global_head_dim / 2);
+                int nopeAngles = totalHalf - ropeAngles;
+                for (int i = 0; i < ropeAngles; i++) {
+                    invFreq.push_back(1.0f / pow(global_rope_base, (float)(2 * i) / (float)global_head_dim));
+                }
+                for (int i = 0; i < nopeAngles; i++) {
+                    invFreq.push_back(0.0f);
+                }
             }
 
             int positions = std::max(max_positions, 16384);
@@ -1056,6 +1075,14 @@ namespace fastllm {
                         newDims[1] += ((v.dims[1] - 1) / unitLen + 1) * unitLen;
                     }
                     pastValue.Expansion(newDims);
+                }
+                k.ToDevice(DataDevice::CPU);
+                if (k.dataType != DataType::FLOAT32 && k.dataType != DataType::FLOAT16 && k.dataType != DataType::BFLOAT16) {
+                    ToDataType(k, DataType::FLOAT32);
+                }
+                v.ToDevice(k.dataDevice);
+                if (v.dataType != k.dataType) {
+                    ToDataType(v, k.dataType);
                 }
                 CatDirect(pastKey, k, 1);
                 CatDirect(pastValue, v, 1);
@@ -1729,6 +1756,14 @@ namespace fastllm {
                         newDims[1] += ((v.dims[1] - 1) / unitLen + 1) * unitLen;
                     }
                     pastValue.Expansion(newDims);
+                }
+                k.ToDevice(DataDevice::CPU);
+                if (k.dataType != DataType::FLOAT32 && k.dataType != DataType::FLOAT16 && k.dataType != DataType::BFLOAT16) {
+                    ToDataType(k, DataType::FLOAT32);
+                }
+                v.ToDevice(k.dataDevice);
+                if (v.dataType != k.dataType) {
+                    ToDataType(v, k.dataType);
                 }
                 CatDirect(pastKey, k, 1);
                 CatDirect(pastValue, v, 1);
@@ -2445,6 +2480,47 @@ namespace fastllm {
     }
 
     void Gemma4Model::Prepare() {
+        // Recompute global RoPE with proportional freq factors if available
+        if (weight.weight.find("model.rope_freqs") != weight.weight.end()) {
+            auto &rf = weight["model.rope_freqs"];
+            rf.ToDevice(DataDevice::CPU);
+            Data rfCpu;
+            rfCpu.CopyFrom(rf);
+            if (rfCpu.dataType != DataType::FLOAT32) {
+                ToDataType(rfCpu, DataType::FLOAT32);
+            }
+            float *rfData = (float*)rfCpu.cpuData;
+            int rfCount = rfCpu.Count(0);
+            int totalHalf = global_head_dim / 2;
+
+            std::vector<float> invFreq;
+            invFreq.resize(totalHalf, 0.0f);
+            for (int i = 0; i < totalHalf && i < rfCount; i++) {
+                invFreq[i] = rfData[i];
+            }
+
+            int positions = std::max(max_positions, 16384);
+            std::vector<std::vector<float>> newGlobalSin(positions), newGlobalCos(positions);
+            for (int p = 0; p < positions; p++) {
+                newGlobalSin[p].resize(totalHalf);
+                newGlobalCos[p].resize(totalHalf);
+                for (int j = 0; j < totalHalf; j++) {
+                    float angle = (float)p * invFreq[j];
+                    newGlobalSin[p][j] = ::sin(angle);
+                    newGlobalCos[p][j] = ::cos(angle);
+                }
+            }
+            std::vector<float> fsin, fcos;
+            for (int i = 0; i < (int)newGlobalSin.size(); i++) {
+                fsin.insert(fsin.end(), newGlobalSin[i].begin(), newGlobalSin[i].end());
+                fcos.insert(fcos.end(), newGlobalCos[i].begin(), newGlobalCos[i].end());
+            }
+            globalSinData.CopyFrom(Data(DataType::FLOAT32,
+                {(int)newGlobalSin.size(), (int)newGlobalSin[0].size()}, fsin));
+            globalCosData.CopyFrom(Data(DataType::FLOAT32,
+                {(int)newGlobalCos.size(), (int)newGlobalCos[0].size()}, fcos));
+        }
+
         std::string lmHeadName = "lm_head.weight";
         std::string embName = "model.language_model.embed_tokens.weight";
         if (weight.weight.find(embName) == weight.weight.end()) {

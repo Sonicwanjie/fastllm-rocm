@@ -17,6 +17,7 @@
 #include <set>
 #include <type_traits>
 #include <vector>
+#include <unordered_map>
 #include <cuda_fp8.h>
 #include "sampling.cuh"
 
@@ -59,6 +60,68 @@ printf("\n");
     return sta;
 }
 */
+
+// UMA (Unified Memory Architecture) detection
+// On GFX1151 (RDNA 3.5) and similar APUs, CPU and GPU share physical memory.
+// Uses cudaHostAlloc + cudaHostGetDevicePointer for zero-copy pinned memory.
+static bool s_fastllmIsUMA = false;
+static bool s_fastllmUMAChecked = false;
+
+static bool FastllmDetectUMA() {
+    if (s_fastllmUMAChecked) return s_fastllmIsUMA;
+    s_fastllmUMAChecked = true;
+    int deviceCount = 0;
+    if (cudaGetDeviceCount(&deviceCount) != cudaSuccess || deviceCount == 0) return false;
+    for (int i = 0; i < deviceCount; i++) {
+        cudaDeviceProp prop;
+        if (cudaGetDeviceProperties(&prop, i) != cudaSuccess) continue;
+        if (prop.integrated) {
+            s_fastllmIsUMA = true;
+            return true;
+        }
+    }
+    return false;
+}
+
+static std::unordered_map<void*, void*> s_fastllmUMAHostPtrs;
+
+static void *FastllmCudaMallocUMA(size_t bytes) {
+    if (!FastllmDetectUMA()) {
+        return FastllmCudaMalloc(bytes);
+    }
+    void *hostPtr = nullptr;
+    cudaError_t err = cudaHostAlloc(&hostPtr, bytes, cudaHostAllocMapped);
+    if (err != cudaSuccess || hostPtr == nullptr) {
+        return FastllmCudaMalloc(bytes);
+    }
+    void *devPtr = nullptr;
+    err = cudaHostGetDevicePointer(&devPtr, hostPtr, 0);
+    if (err != cudaSuccess || devPtr == nullptr) {
+        cudaFreeHost(hostPtr);
+        return FastllmCudaMalloc(bytes);
+    }
+    s_fastllmUMAHostPtrs[devPtr] = hostPtr;
+    return devPtr;
+}
+
+static void FastllmCudaFreeUMA(void *ptr) {
+    auto it = s_fastllmUMAHostPtrs.find(ptr);
+    if (it != s_fastllmUMAHostPtrs.end()) {
+        cudaFreeHost(it->second);
+        s_fastllmUMAHostPtrs.erase(it);
+    } else {
+        FastllmCudaFree(ptr);
+    }
+}
+
+static void FastllmCudaCopyToUMA(void *devPtr, const void *src, size_t bytes) {
+    auto it = s_fastllmUMAHostPtrs.find(devPtr);
+    if (it != s_fastllmUMAHostPtrs.end()) {
+        memcpy(it->second, src, bytes);
+    } else {
+        cudaMemcpy(devPtr, src, bytes, cudaMemcpyHostToDevice);
+    }
+}
 
 static std::map<int, cublasHandle_t> s_fastllmCublasHandleMap;
 cublasHandle_t getFastllmCublasHandle() {
@@ -3173,6 +3236,152 @@ bool FastllmCudaRMSNorm(const fastllm::Data &input, fastllm::Data &weight, fastl
     return true;
 }
 
+// RMSNorm without weight (normalize to unit variance only)
+template <int THREAD_PER_BLOCK>
+__global__ void FastllmRMSNormNoScaleKernel(float *input, float *output, int outer, int channels, float eps) {
+    int o = blockIdx.x;
+    input = input + o * channels;
+    output = output + o * channels;
+    constexpr int WARP_SIZE = 32;
+    constexpr int NUM_WARPS = THREAD_PER_BLOCK / WARP_SIZE;
+    __shared__ float warp_sums[NUM_WARPS];
+    __shared__ float scale;
+    unsigned int tid = threadIdx.x;
+    int warp_id = tid / WARP_SIZE;
+    int lane_id = tid % WARP_SIZE;
+    float sum2 = 0.0f;
+    for (int i = tid; i < channels; i += THREAD_PER_BLOCK) {
+        sum2 += input[i] * input[i];
+    }
+    for (int offset = WARP_SIZE / 2; offset > 0; offset >>= 1) {
+        sum2 += __shfl_down_sync(0xffffffff, sum2, offset);
+    }
+    if (lane_id == 0) warp_sums[warp_id] = sum2;
+    __syncthreads();
+    if (warp_id == 0) {
+        float val = (lane_id < NUM_WARPS) ? warp_sums[lane_id] : 0.0f;
+        for (int offset = WARP_SIZE / 2; offset > 0; offset >>= 1) {
+            val += __shfl_down_sync(0xffffffff, val, offset);
+        }
+        if (lane_id == 0) scale = rsqrtf(val / channels + eps);
+    }
+    __syncthreads();
+    float s = scale;
+    for (int i = tid; i < channels; i += THREAD_PER_BLOCK) {
+        output[i] = input[i] * s;
+    }
+}
+
+template <int THREAD_PER_BLOCK>
+__global__ void FastllmRMSNormNoScaleKernel(half *input, half *output, int outer, int channels, float eps) {
+    int o = blockIdx.x;
+    input = input + o * channels;
+    output = output + o * channels;
+    constexpr int WARP_SIZE = 32;
+    constexpr int NUM_WARPS = THREAD_PER_BLOCK / WARP_SIZE;
+    __shared__ float warp_sums[NUM_WARPS];
+    __shared__ float scale;
+    unsigned int tid = threadIdx.x;
+    int warp_id = tid / WARP_SIZE;
+    int lane_id = tid % WARP_SIZE;
+    float sum2 = 0.0f;
+    for (int i = tid; i < channels; i += THREAD_PER_BLOCK) {
+        float x = (float)input[i];
+        sum2 += x * x;
+    }
+    for (int offset = WARP_SIZE / 2; offset > 0; offset >>= 1) {
+        sum2 += __shfl_down_sync(0xffffffff, sum2, offset);
+    }
+    if (lane_id == 0) warp_sums[warp_id] = sum2;
+    __syncthreads();
+    if (warp_id == 0) {
+        float val = (lane_id < NUM_WARPS) ? warp_sums[lane_id] : 0.0f;
+        for (int offset = WARP_SIZE / 2; offset > 0; offset >>= 1) {
+            val += __shfl_down_sync(0xffffffff, val, offset);
+        }
+        if (lane_id == 0) scale = rsqrtf(val / channels + eps);
+    }
+    __syncthreads();
+    float s = scale;
+    for (int i = tid; i < channels; i += THREAD_PER_BLOCK) {
+        output[i] = (half)((float)input[i] * s);
+    }
+}
+
+template <int THREAD_PER_BLOCK>
+__global__ void FastllmRMSNormNoScaleKernel(__nv_bfloat16 *input, __nv_bfloat16 *output, int outer, int channels, float eps) {
+    int o = blockIdx.x;
+    input = input + o * channels;
+    output = output + o * channels;
+    constexpr int WARP_SIZE = 32;
+    constexpr int NUM_WARPS = THREAD_PER_BLOCK / WARP_SIZE;
+    __shared__ float warp_sums[NUM_WARPS];
+    __shared__ float scale;
+    unsigned int tid = threadIdx.x;
+    int warp_id = tid / WARP_SIZE;
+    int lane_id = tid % WARP_SIZE;
+    float sum2 = 0.0f;
+    for (int i = tid; i < channels; i += THREAD_PER_BLOCK) {
+        float x = (float)(__nv_bfloat16(input[i]));
+        sum2 += x * x;
+    }
+    for (int offset = WARP_SIZE / 2; offset > 0; offset >>= 1) {
+        sum2 += __shfl_down_sync(0xffffffff, sum2, offset);
+    }
+    if (lane_id == 0) warp_sums[warp_id] = sum2;
+    __syncthreads();
+    if (warp_id == 0) {
+        float val = (lane_id < NUM_WARPS) ? warp_sums[lane_id] : 0.0f;
+        for (int offset = WARP_SIZE / 2; offset > 0; offset >>= 1) {
+            val += __shfl_down_sync(0xffffffff, val, offset);
+        }
+        if (lane_id == 0) scale = rsqrtf(val / channels + eps);
+    }
+    __syncthreads();
+    float s = scale;
+    for (int i = tid; i < channels; i += THREAD_PER_BLOCK) {
+        output[i] = __nv_bfloat16((float)(__nv_bfloat16(input[i])) * s);
+    }
+}
+
+bool FastllmCudaRMSNormNoScale(fastllm::Data &input, float eps) {
+    input.ToDevice(fastllm::DataDevice::CUDA);
+    float *cudaInput = (float *) FastllmCudaPrepareInput(input);
+    float *cudaOutput = (float *) FastllmCudaPrepareOutput(input);
+
+    int dimsLen = input.dims.size();
+    int axis = dimsLen - 1;
+    int outer = input.Count(0) / input.Count(axis);
+    int channels = input.dims[axis];
+
+    if (input.dataType == fastllm::DataType::FLOAT32) {
+        if (channels < 512)
+           FastllmRMSNormNoScaleKernel<64><<<dim3(outer), dim3(64)>>>(cudaInput, cudaOutput, outer, channels, eps);
+        else if (channels < 4096)
+           FastllmRMSNormNoScaleKernel<512><<<dim3(outer), dim3(512)>>>(cudaInput, cudaOutput, outer, channels, eps);
+        else
+           FastllmRMSNormNoScaleKernel<1024><<<dim3(outer), dim3(1024)>>>(cudaInput, cudaOutput, outer, channels, eps);
+    } else if (input.dataType == fastllm::DataType::FLOAT16) {
+        if (channels < 512)
+           FastllmRMSNormNoScaleKernel<64><<<dim3(outer), dim3(64)>>>((half*)cudaInput, (half*)cudaOutput, outer, channels, eps);
+        else if (channels < 4096)
+           FastllmRMSNormNoScaleKernel<512><<<dim3(outer), dim3(512)>>>((half*)cudaInput, (half*)cudaOutput, outer, channels, eps);
+        else
+           FastllmRMSNormNoScaleKernel<1024><<<dim3(outer), dim3(1024)>>>((half*)cudaInput, (half*)cudaOutput, outer, channels, eps);
+    } else if (input.dataType == fastllm::DataType::BFLOAT16) {
+        if (channels < 512)
+           FastllmRMSNormNoScaleKernel<64><<<dim3(outer), dim3(64)>>>((__nv_bfloat16*)cudaInput, (__nv_bfloat16*)cudaOutput, outer, channels, eps);
+        else if (channels < 4096)
+           FastllmRMSNormNoScaleKernel<512><<<dim3(outer), dim3(512)>>>((__nv_bfloat16*)cudaInput, (__nv_bfloat16*)cudaOutput, outer, channels, eps);
+        else
+           FastllmRMSNormNoScaleKernel<1024><<<dim3(outer), dim3(1024)>>>((__nv_bfloat16*)cudaInput, (__nv_bfloat16*)cudaOutput, outer, channels, eps);
+    }
+
+    FastllmCudaFinishInput(input, cudaInput);
+    FastllmCudaFinishOutput(input, cudaOutput);
+    return true;
+}
+
 template <int THREAD_PER_BLOCK>
 __global__ void FastllmRMSNormSiluMulHalfKernel(const half *input, const float *weight,
                                                 const half *gateInput, half *output,
@@ -5822,6 +6031,11 @@ int FastllmCudaGetDevice() {
 }
 
 int GetPointerDeviceId(void *ptr) {
+    // Check if this is a UMA tracked pointer
+    if (s_fastllmUMAHostPtrs.find(ptr) != s_fastllmUMAHostPtrs.end()) {
+        return FastllmCudaGetDevice();
+    }
+
     cudaPointerAttributes attributes;
     cudaError_t err = cudaPointerGetAttributes(&attributes, ptr);
 
@@ -5832,14 +6046,14 @@ int GetPointerDeviceId(void *ptr) {
         if (attributes.type == cudaMemoryTypeDevice) {
 #endif
             int device = attributes.device;
-            // printf("Pointer belongs to device %d\n", device);
             return device;
+        } else if (FastllmDetectUMA()) {
+            // On UMA, host memory pointers are also accessible from device
+            return FastllmCudaGetDevice();
         } else {
-            printf("Pointer is not device memory\n");
             return -1;
         }
     } else {
-        printf("Error: %s\n", cudaGetErrorString(err));
         return -1;
     }
 }

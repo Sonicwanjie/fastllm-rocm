@@ -645,20 +645,6 @@ __global__ void InitBlockAtten(float *sum0, float *max0, float *sum1, float *max
     }
 }
 
-// --- FP32 to FP16 batch conversion kernel ---
-__global__ void FastllmHipConvertFp32ToFp16Kernel(half *dst, const float *src, size_t count) {
-    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < count) {
-        dst[idx] = __float2half_rn(src[idx]);
-    }
-}
-
-static void FastllmHipConvertFp32ToFp16(half *dst, const float *src, size_t count) {
-    int threads = 256;
-    int blocks = (count + threads - 1) / threads;
-    hipLaunchKernelGGL(FastllmHipConvertFp32ToFp16Kernel, dim3(blocks), dim3(threads), 0, 0, dst, src, count);
-}
-
 template <int THREAD_PER_BLOCK>
 __global__ void AttnBlockUpdate(half *data, int n, int m, float *lastMax, float *lastSum, float *curMax, float *curSum) {
     __shared__ float scale;
@@ -2325,7 +2311,7 @@ bool FastllmCudaHalfPagedAttention(fastllm::Data &q, fastllm::Data &k, fastllm::
         printf("DoCudaAttentionPaged: paged KV cache dataType mismatch\n");
         return true;
     }
-    if (pagedKVCacheK->dataType != q.dataType && pagedKVCacheK->dataType != fastllm::DataType::FP8_E4M3 && pagedKVCacheK->dataType != fastllm::DataType::FLOAT32) {
+    if (pagedKVCacheK->dataType != q.dataType && pagedKVCacheK->dataType != fastllm::DataType::FP8_E4M3) {
         printf("DoCudaAttentionPaged: unsupported KV cache dataType=%d\n", (int)pagedKVCacheK->dataType);
         return true;
     }
@@ -2407,20 +2393,8 @@ bool FastllmCudaHalfPagedAttention(fastllm::Data &q, fastllm::Data &k, fastllm::
     auto runPrefill = [&]<typename QType, typename KVType>() {
         QType *qd = (QType*)q.cudaData;
         QType *od = (QType*)output.cudaData;
-        // --- FP32 KV cache compatibility ---
-        uint8_t *fp16KVDataK = nullptr;
-        uint8_t *fp16KVDataV = nullptr;
-        bool needKVConvert = (pagedKVCacheK->dataType == fastllm::DataType::FLOAT32);
-        if (needKVConvert) {
-            size_t totalStorageElements = (size_t)pagedKVCacheK->dims[0] * pageLen * numHeads * headDim;
-            fp16KVDataK = (uint8_t*)FastllmCudaMalloc(totalStorageElements * sizeof(half));
-            fp16KVDataV = (uint8_t*)FastllmCudaMalloc(totalStorageElements * sizeof(half));
-            FastllmHipConvertFp32ToFp16((half*)fp16KVDataK, (const float*)pagedKVCacheK->cudaData, totalStorageElements);
-            FastllmHipConvertFp32ToFp16((half*)fp16KVDataV, (const float*)pagedKVCacheV->cudaData, totalStorageElements);
-        }
-
-        KVType *pagedKVCacheDataK = (KVType*)(needKVConvert ? fp16KVDataK : pagedKVCacheK->cudaData);
-        KVType *pagedKVCacheDataV = (KVType*)(needKVConvert ? fp16KVDataV : pagedKVCacheV->cudaData);
+        KVType *pagedKVCacheDataK = (KVType*)pagedKVCacheK->cudaData;
+        KVType *pagedKVCacheDataV = (KVType*)pagedKVCacheV->cudaData;
 
         //  paged_kv_t 
         // fastllm  [maxPages, pageLen, numHeads, headDim] NHD 
@@ -2505,12 +2479,6 @@ bool FastllmCudaHalfPagedAttention(fastllm::Data &q, fastllm::Data &k, fastllm::
         
         FastllmCudaFree(q_indptr_gpu);
         ((fastllm::Data*)&output)->Resize({output.dims[1], output.dims[0], output.dims[2]});
-
-        // --- FP32 KV cache cleanup ---
-        if (needKVConvert) {
-            FastllmCudaFree(fp16KVDataK);
-            FastllmCudaFree(fp16KVDataV);
-        }
         FastllmCudaPermute(*((fastllm::Data*)&output), {1, 0, 2});
     };
 
@@ -2549,7 +2517,6 @@ bool FastllmCudaHalfPagedAttention(fastllm::Data &q, fastllm::Data &k, fastllm::
         exit(0);
     }
     
-
     DeviceSync();
     return true;
 }
@@ -2613,7 +2580,7 @@ bool FastllmCudaHalfPagedAttentionBatch(fastllm::Data &q, fastllm::Data &kCaches
         printf("FastllmCudaHalfPagedAttentionBatch: paged KV cache dataType mismatch\n");
         return false;
     }
-    if (pagedKVCacheK->dataType != q.dataType && pagedKVCacheK->dataType != fastllm::DataType::FP8_E4M3 && pagedKVCacheK->dataType != fastllm::DataType::FLOAT32) {
+    if (pagedKVCacheK->dataType != q.dataType && pagedKVCacheK->dataType != fastllm::DataType::FP8_E4M3) {
         printf("FastllmCudaHalfPagedAttentionBatch: unsupported KV cache dataType=%d\n", (int)pagedKVCacheK->dataType);
         return false;
     }
@@ -2651,20 +2618,8 @@ bool FastllmCudaHalfPagedAttentionBatch(fastllm::Data &q, fastllm::Data &kCaches
     auto runBatchPrefill = [&]<typename QType, typename KVType>() {
         QType *qd = (QType*)q.cudaData;
         QType *od = (QType*)output.cudaData;
-        // --- FP32 KV cache compatibility ---
-        uint8_t *fp16KVDataK = nullptr;
-        uint8_t *fp16KVDataV = nullptr;
-        bool needKVConvert = (pagedKVCacheK->dataType == fastllm::DataType::FLOAT32);
-        if (needKVConvert) {
-            size_t totalStorageElements = (size_t)pagedKVCacheK->dims[0] * pageLen * numHeads * headDim;
-            fp16KVDataK = (uint8_t*)FastllmCudaMalloc(totalStorageElements * sizeof(half));
-            fp16KVDataV = (uint8_t*)FastllmCudaMalloc(totalStorageElements * sizeof(half));
-            FastllmHipConvertFp32ToFp16((half*)fp16KVDataK, (const float*)pagedKVCacheK->cudaData, totalStorageElements);
-            FastllmHipConvertFp32ToFp16((half*)fp16KVDataV, (const float*)pagedKVCacheV->cudaData, totalStorageElements);
-        }
-
-        KVType *pagedKVCacheDataK = (KVType*)(needKVConvert ? fp16KVDataK : pagedKVCacheK->cudaData);
-        KVType *pagedKVCacheDataV = (KVType*)(needKVConvert ? fp16KVDataV : pagedKVCacheV->cudaData);
+        KVType *pagedKVCacheDataK = (KVType*)pagedKVCacheK->cudaData;
+        KVType *pagedKVCacheDataV = (KVType*)pagedKVCacheV->cudaData;
 
         //  paged_kv_t 
         paged_kv_t<KVType, uint32_t> paged_kv(
@@ -2759,12 +2714,6 @@ bool FastllmCudaHalfPagedAttentionBatch(fastllm::Data &q, fastllm::Data &kCaches
         status = FastllmDispatchPagedPrefillByHeadDim(
             headDim, (long)plan_info.cta_tile_q, prefill_params, tmp_v, tmp_s, enable_pdl, stream,
             "FastllmCudaHalfPagedAttentionBatch");
-
-        // --- FP32 KV cache cleanup ---
-        if (needKVConvert) {
-            FastllmCudaFree(fp16KVDataK);
-            FastllmCudaFree(fp16KVDataV);
-        }
     };
 
     if (q.dataType == fastllm::DataType::BFLOAT16) {

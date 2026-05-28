@@ -292,6 +292,11 @@ bool FastllmCudaRMSNormPartSum2(const fastllm::Data &input, float *sumOut, int s
 bool FastllmCudaRMSNormPartApply(const fastllm::Data &input, fastllm::Data &weight, fastllm::Data &output, const float *sumIn, float eps, int start, int end, int partChannelsGlobal);
 bool FastllmCudaRMSNormSiluMulFloat16(const fastllm::Data &input, fastllm::Data &weight, const fastllm::Data &gateInput, fastllm::Data &output, float eps);
 bool FastllmCudaRMSNormNoScale(fastllm::Data &input, float eps);
+
+// UMA-aware allocation for zero-copy on integrated GPUs
+void *FastllmCudaMallocUMA(size_t bytes);
+void FastllmCudaFreeUMA(void *ptr);
+void FastllmCudaCopyToUMA(void *devPtr, const void *src, size_t bytes);
 bool FastllmCudaLayerNorm(const fastllm::Data &input, fastllm::Data &gamma, fastllm::Data &beta, fastllm::Data &output, int axis);
 bool FastllmCudaTopK(const fastllm::Data &input, fastllm::Data &output, int topk);
 bool FastllmCudaSelectExpert(const fastllm::Data &logits, const fastllm::Data *gateBias, 

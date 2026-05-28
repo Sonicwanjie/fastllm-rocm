@@ -403,7 +403,7 @@ namespace fastllm {
                     ), // output norm
                     GGUFWeightReplaceRule (
                         std::regex(R"(rope_freqs\.weight)"),
-                        "ignore"
+                        "model.rope_freqs"
                     ) // ignore rope_freqs (computed locally)
                 }
             }
