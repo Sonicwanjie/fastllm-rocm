@@ -14,6 +14,9 @@ namespace fastllm {
             LinearAdd(*input, *weight, *bias, *middle, *output);
         } else {
             Linear(*input, *weight, *bias, *middle);
+            if (middle->dataType != output->dataType) {
+                ToDataType(*middle, output->dataType);
+            }
             AddTo(*output, *middle);
         }
     }
