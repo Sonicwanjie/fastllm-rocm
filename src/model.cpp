@@ -340,6 +340,7 @@ namespace fastllm {
         } else if (modelType == "qwen2") {
             model = (basellm*)(new Qwen2Model());
             model->model_type = "qwen2";
+            model->weight.tokenizer.type = Tokenizer::TokenizerType::QWEN;
         } else if (modelType == "qwen3") {
             model = new Qwen3Model();
             model->model_type = "qwen3";
