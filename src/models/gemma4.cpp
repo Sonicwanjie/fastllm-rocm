@@ -1033,16 +1033,6 @@ namespace fastllm {
 
             fastllm::LlamaRotatePosition2D(q, positionIds, *curSinData, *curCosData, curRotaryDim);
 
-            // NaN diag: check q after RoPE in first Forward (only layer 0, first call)
-            if (i == 0) {
-                Data _qc; _qc.CopyFrom(q); _qc.ToDevice(DataDevice::CPU);
-                if (_qc.dataType != DataType::FLOAT32) ToDataType(_qc, DataType::FLOAT32);
-                float *_qp = (float*)_qc.cpuData; int _qn = _qc.Count(0); int _nan = 0;
-                for (int _k = 0; _k < _qn && _k < 4096; _k++) if (std::isnan(_qp[_k])) _nan++;
-                printf("[DIAG-F1] L0 q after RoPE: total=%d nan=%d dims=[%d %d %d %d] hdim=%d rdim=%d dtype=%d\n", _qn, _nan,
-                    q.dims.size()>0?q.dims[0]:0, q.dims.size()>1?q.dims[1]:0, q.dims.size()>2?q.dims[2]:0, q.dims.size()>3?q.dims[3]:0, curHeadDim, curRotaryDim, (int)q.dataType);
-                fflush(stdout);
-            }
 
             if (!isKVShared) {
                 PermuteSelf(k, {0, 2, 1, 3});
@@ -1095,15 +1085,6 @@ namespace fastllm {
 
             Attention(q, pastKey, pastValue, attentionMask, qkv, q.dims[0] / pastKey.dims[0], 1.0f, 1);
 
-            if (i == 0) {
-                Data _ac; _ac.CopyFrom(qkv); _ac.ToDevice(DataDevice::CPU);
-                if (_ac.dataType != DataType::FLOAT32) ToDataType(_ac, DataType::FLOAT32);
-                float *_ap = (float*)_ac.cpuData; int _an = _ac.Count(0); int _anan = 0; float _mn = 1e30f, _mx = -1e30f;
-                for (int _k = 0; _k < _an && _k < 4096; _k++) { if (std::isnan(_ap[_k])) _anan++; if (!std::isnan(_ap[_k]) && !std::isinf(_ap[_k])) { if(_ap[_k]<_mn)_mn=_ap[_k]; if(_ap[_k]>_mx)_mx=_ap[_k]; } }
-                printf("[DIAG-F1] L0 after Attn: total=%d nan=%d range=[%.4f,%.4f] qkv.dims=[%d %d %d]\n", _an, _anan, _mn, _mx, qkv.dims.size()>0?qkv.dims[0]:0, qkv.dims.size()>1?qkv.dims[1]:0, qkv.dims.size()>2?qkv.dims[2]:0);
-                fflush(stdout);
-            }
-
             PermuteSelf(qkv, {1, 0, 2});
             qkv.Reshape({seqlen, bsz, -1});
             PermuteSelf(qkv, {1, 0, 2});
@@ -1111,15 +1092,6 @@ namespace fastllm {
             Linear(qkv, weight[oWeightName], *GetEmptyData(), attenInputOut);
             RMSNorm(attenInputOut, this->weight[pre + ".post_attention_layernorm.weight"], rms_norm_eps, attenInputOut);
             AddTo(hiddenStates, attenInputOut);
-
-            if (i == 0 || i == 5) {
-                Data _hc; _hc.CopyFrom(hiddenStates); _hc.ToDevice(DataDevice::CPU);
-                if (_hc.dataType != DataType::FLOAT32) ToDataType(_hc, DataType::FLOAT32);
-                float *_hp = (float*)_hc.cpuData; int _hn = _hc.Count(0); int _hnan = 0;
-                for (int _k = 0; _k < _hn && _k < 8192; _k++) if (std::isnan(_hp[_k])) _hnan++;
-                printf("[DIAG-F1] L%d after AddTo(hidden): total=%d nan=%d isFull=%d hdim=%d\n", i, _hn, _hnan, (int)isFullAttn, curHeadDim);
-                fflush(stdout);
-            }
 
             RMSNorm(hiddenStates, this->weight[pre + ".pre_feedforward_layernorm.weight"], rms_norm_eps, attenInput);
             Linear(attenInput, weight[pre + ".mlp.gate_proj.weight"], *GetEmptyData(), w1);
@@ -1184,19 +1156,6 @@ namespace fastllm {
 
         Linear(*lastHiddenStates, weight["lm_head.weight"], *GetEmptyData(), logits);
         ToDataType(logits, DataType::FLOAT32);
-        {
-            // DEBUG: Print first token logits for ForwardBatch
-            logits.ToDevice(DataDevice::CPU);
-            float *ldata = (float*)logits.cpuData;
-            int total = logits.Count(0);
-            int vocabSize = logits.dims.back();
-            int bestId = 0; float bestVal = -1e30f;
-            for (int j = 0; j < vocabSize && j < total; j++) {
-                if (ldata[j] > bestVal) { bestVal = ldata[j]; bestId = j; }
-            }
-            printf("[DEBUG] ForwardBatch: total=%d vocabSize=%d bestToken=%d bestLogit=%.4f\n", total, vocabSize, bestId, bestVal);
-            fflush(stdout);
-        }
         if (final_logit_softcapping > 0.0f) {
             Mul(logits, 1.0f / final_logit_softcapping, logits);
             logits.ToDevice(DataDevice::CPU);
@@ -1214,21 +1173,6 @@ namespace fastllm {
             memcpy((float*) retLogits->data(),
                    ((float*) logits.cpuData) + (logits.dims[1] - 1) * size,
                    (size_t) size * logits.unitSize);
-        }
-
-
-        {
-            // DEBUG: Print first few logits and predicted token
-            logits.ToDevice(DataDevice::CPU);
-            float *ldata = (float*)logits.cpuData;
-            int vocabSize = logits.dims.back();
-            int bestId = 0; float bestVal = -1e30f;
-            for (int j = 0; j < vocabSize; j++) {
-                if (ldata[j] > bestVal) { bestVal = ldata[j]; bestId = j; }
-            }
-            printf("[DEBUG] first ForwardTextFromHiddenStates: bestToken=%d bestLogit=%.4f logits[0..4]=[%.4f %.4f %.4f %.4f %.4f]\n",
-                   bestId, bestVal, ldata[0], ldata[1], ldata[2], ldata[3], ldata[4]);
-            fflush(stdout);
         }
         TopK(logits, topk, 1);
         topk.ToDevice(DataDevice::CPU);
@@ -2114,65 +2058,12 @@ namespace fastllm {
                 }
 
                 fastllm::LlamaRotatePosition2D(k, allPositionIds, *curSinData, *curCosData, curRotaryDim);
-                // NaN diagnostic: check K after RoPE for global attention
-                if (isFullAttn) {
-                    Data kCheck;
-                    kCheck.CopyFrom(k);
-                    kCheck.ToDevice(DataDevice::CPU);
-                    if (kCheck.dataType != DataType::FLOAT32) { ToDataType(kCheck, DataType::FLOAT32); }
-                    float *kp = (float*)kCheck.cpuData;
-                    int kTotal = kCheck.Count(0);
-                    int nanCount = 0;
-                    for (int kk = 0; kk < kTotal && kk < 65536; kk++) {
-                        if (std::isnan(kp[kk])) nanCount++;
-                    }
-                    printf("[NaN-DBG] Layer %d (full) after K-RoPE: kTotal=%d nan=%d k.dims=[%d,%d,%d,%d]\n",
-                           i, kTotal, nanCount,
-                           k.dims.size()>0?k.dims[0]:0, k.dims.size()>1?k.dims[1]:0,
-                           k.dims.size()>2?k.dims[2]:0, k.dims.size()>3?k.dims[3]:0);
-                    fflush(stdout);
-                }
             }
 
             q.Reshape({bsz, seqlen, -1, curHeadDim});
             RMSNorm(q, this->weight[qNormName], rms_norm_eps, q);
-            // NaN diagnostic: check Q before RoPE for global attention
-            if (isFullAttn) {
-                Data qBeforeRoPE;
-                qBeforeRoPE.CopyFrom(q);
-                qBeforeRoPE.ToDevice(DataDevice::CPU);
-                if (qBeforeRoPE.dataType != DataType::FLOAT32) { ToDataType(qBeforeRoPE, DataType::FLOAT32); }
-                float *qbp = (float*)qBeforeRoPE.cpuData;
-                int qTotal = qBeforeRoPE.Count(0);
-                int nanCount = 0;
-                for (int k = 0; k < qTotal && k < 65536; k++) {
-                    if (std::isnan(qbp[k])) nanCount++;
-                }
-                printf("[NaN-DBG] Layer %d (full) BEFORE Q-RoPE: qTotal=%d nan=%d\n", i, qTotal, nanCount);
-                fflush(stdout);
-            }
 
             fastllm::LlamaRotatePosition2D(q, allPositionIds, *curSinData, *curCosData, curRotaryDim);
-
-            // NaN diagnostic: check Q after RoPE for global attention
-            if (isFullAttn) {
-                Data qCheck;
-                qCheck.CopyFrom(q);
-                qCheck.ToDevice(DataDevice::CPU);
-                if (qCheck.dataType != DataType::FLOAT32) { ToDataType(qCheck, DataType::FLOAT32); }
-                float *qp = (float*)qCheck.cpuData;
-                int qTotal = qCheck.Count(0);
-                int nanCount = 0, infCount = 0;
-                for (int k = 0; k < qTotal && k < 65536; k++) {
-                    if (std::isnan(qp[k])) nanCount++;
-                    if (std::isinf(qp[k])) infCount++;
-                }
-                printf("[NaN-DBG] Layer %d (full) after Q-RoPE: qTotal=%d nan=%d inf=%d headDim=%d rotDim=%d q.dims=[%d,%d,%d,%d]\n",
-                       i, qTotal, nanCount, infCount, curHeadDim, curRotaryDim,
-                       q.dims.size()>0?q.dims[0]:0, q.dims.size()>1?q.dims[1]:0,
-                       q.dims.size()>2?q.dims[2]:0, q.dims.size()>3?q.dims[3]:0);
-                fflush(stdout);
-            }
 
             int curEmbedDim = num_attention_heads * curHeadDim;
             Data attenOutput = Data(this->dataType);
@@ -2229,51 +2120,12 @@ namespace fastllm {
                 PermuteSelf(curAttenOutput, {1, 0, 2});
             }
 
-            // NaN diagnostic: check attention output for global attention
-            if (isFullAttn) {
-                Data attenCheck;
-                attenCheck.CopyFrom(attenOutput);
-                attenCheck.ToDevice(DataDevice::CPU);
-                if (attenCheck.dataType != DataType::FLOAT32) { ToDataType(attenCheck, DataType::FLOAT32); }
-                float *ap = (float*)attenCheck.cpuData;
-                int aTotal = attenCheck.Count(0);
-                int nanCount = 0, infCount = 0;
-                float minVal = 1e30f, maxVal = -1e30f;
-                for (int k = 0; k < aTotal && k < 65536; k++) {
-                    if (std::isnan(ap[k])) nanCount++;
-                    if (std::isinf(ap[k])) infCount++;
-                    if (!std::isnan(ap[k]) && !std::isinf(ap[k])) {
-                        if (ap[k] < minVal) minVal = ap[k];
-                        if (ap[k] > maxVal) maxVal = ap[k];
-                    }
-                }
-                printf("[NaN-DBG] Layer %d (full) after Attention: total=%d nan=%d inf=%d range=[%.4f,%.4f]\n",
-                       i, aTotal, nanCount, infCount, minVal, maxVal);
-                fflush(stdout);
-            }
 
             Linear(attenOutput, weight[oWeightName], *GetEmptyData(), attenLastOutput);
 
             RMSNorm(attenLastOutput, this->weight[pre + ".post_attention_layernorm.weight"], rms_norm_eps, attenLastOutput);
             AddTo(hiddenStates, attenLastOutput);
 
-            // NaN diagnostic: check hiddenStates after attention block for global attention
-            if (isFullAttn) {
-                Data hsCheck;
-                hsCheck.CopyFrom(hiddenStates);
-                hsCheck.ToDevice(DataDevice::CPU);
-                if (hsCheck.dataType != DataType::FLOAT32) { ToDataType(hsCheck, DataType::FLOAT32); }
-                float *hp = (float*)hsCheck.cpuData;
-                int hTotal = hsCheck.Count(0);
-                int nanCount = 0, infCount = 0;
-                for (int k = 0; k < hTotal && k < 65536; k++) {
-                    if (std::isnan(hp[k])) nanCount++;
-                    if (std::isinf(hp[k])) infCount++;
-                }
-                printf("[NaN-DBG] Layer %d (full) after AddTo(hidden): total=%d nan=%d inf=%d\n",
-                       i, hTotal, nanCount, infCount);
-                fflush(stdout);
-            }
 
             RMSNorm(hiddenStates, this->weight[pre + ".pre_feedforward_layernorm.weight"], rms_norm_eps, attenInput);
 

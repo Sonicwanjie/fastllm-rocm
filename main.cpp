@@ -158,8 +158,6 @@ int main(int argc, char **argv) {
         }
         messages.push_back(std::make_pair("user", input));
         std::string prompt = model->ApplyChatTemplate(messages);
-        printf("DEBUG: prompt=[%s] (len=%d)\n", prompt.c_str(), (int)prompt.size());
-        fflush(stdout);
         std::string ret;
         try {
             ret = model->Response(prompt, [](int index, const char* content) {

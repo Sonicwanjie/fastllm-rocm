@@ -1,0 +1,19 @@
+*** Begin Patch
+*** Update File: src/models/gemma4.cpp
+@@
+             Mul(hiddenStates, scalar, hiddenStates);
+             }
++
++            // Layer norm diagnostic: print hidden state norm every 5 layers for first call
++            if (i % 5 == 0 || i == block_cnt - 1) {
++                Data _diag_hs; _diag_hs.CopyFrom(hiddenStates); _diag_hs.ToDevice(DataDevice::CPU);
++                if (_diag_hs.dataType != DataType::FLOAT32) ToDataType(_diag_hs, DataType::FLOAT32);
++                float *_dp = (float*)_diag_hs.cpuData; int _dn = _diag_hs.Count(0);
++                double _dsq = 0; for (int _k = 0; _k < _dn; _k++) _dsq += (double)_dp[_k] * _dp[_k];
++                printf("[LAYER-NORM] L%d (%s): norm=%.4f dtype=%d\n", i, isFullAttn?"full":"slide", sqrt(_dsq), (int)hiddenStates.dataType);
++                fflush(stdout);
++            }
+         }
+ 
+         Data logits, topk;
+*** End Patch

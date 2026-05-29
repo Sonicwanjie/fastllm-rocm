@@ -149,7 +149,12 @@ std::map <std::string, fastllm::DataType> dataTypeDict = {
     {"int8", fastllm::DataType::INT8},
     {"int4", fastllm::DataType::INT4_NOZERO},
     {"int4z", fastllm::DataType::INT4},
-    {"int4g", fastllm::DataType::INT4_GROUP}
+    {"int4g", fastllm::DataType::INT4_GROUP},
+    {"bfloat16", fastllm::DataType::BFLOAT16},
+    {"bf16", fastllm::DataType::BFLOAT16},
+    {"fp8", fastllm::DataType::FP8_E4M3},
+    {"float8", fastllm::DataType::FP8_E4M3},
+    {"fp8_e4m3", fastllm::DataType::FP8_E4M3}
 };
 
 struct APIConfig {
@@ -682,6 +687,13 @@ std::mutex locker;
 
 int main(int argc, char** argv) {
     ParseArgs(argc, argv, config);
+#ifdef _WIN32
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        std::cout << "WSAStartup failed!" << std::endl;
+        exit(-1);
+    }
+#endif
 
     if (config.devices.size() != 0) {
         fastllm::SetDeviceMap(config.devices);
