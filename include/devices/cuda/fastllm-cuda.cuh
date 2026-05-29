@@ -526,3 +526,16 @@ extern __global__ void FastllmCudaBF162HalfKernel(uint16_t* a, half *b, int len)
 extern __global__ void FastllmCudaHalf2BF16Kernel(half* a, __nv_bfloat16 *b, int len);
 extern __global__ void FastllmCudaBiasKernel(__nv_bfloat16* a, __nv_bfloat16* bias, int k);
 #endif
+#ifdef USE_CUDA
+bool FastllmCudaTanhSoftcap(const fastllm::Data &input, fastllm::Data &output, float cap);
+bool FastllmCudaTanhSoftcapInplace(fastllm::Data &data, float cap);
+#else
+// MSVC fallback: CPU tanh loop (defined in fastllm-cuda.cu but we need inline here)
+inline bool FastllmCudaTanhSoftcap(const fastllm::Data &, fastllm::Data &, float) { return false; }
+inline bool FastllmCudaTanhSoftcapInplace(fastllm::Data &, float) { return false; }
+#endif
+#ifdef USE_CUDA
+bool FastllmCudaWaveGEMV(const fastllm::Data &weight, const fastllm::Data &input, fastllm::Data &output, float scale);
+#else
+inline bool FastllmCudaWaveGEMV(const fastllm::Data &, const fastllm::Data &, fastllm::Data &, float) { return false; }
+#endif

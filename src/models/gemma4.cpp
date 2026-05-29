@@ -1158,12 +1158,17 @@ namespace fastllm {
         ToDataType(logits, DataType::FLOAT32);
         if (final_logit_softcapping > 0.0f) {
             Mul(logits, 1.0f / final_logit_softcapping, logits);
+#ifdef USE_CUDA
+            FastllmCudaTanhSoftcapInplace(logits, final_logit_softcapping);
+#else
+            // CPU fallback for non-CUDA build
             logits.ToDevice(DataDevice::CPU);
-            float *logitsData = (float*) logits.cpuData;
+            float *logitsData = (float*)logits.cpuData;
             int total = logits.Count(0);
             for (int j = 0; j < total; j++) {
                 logitsData[j] = tanh(logitsData[j]) * final_logit_softcapping;
             }
+#endif
         }
 
         if (generationConfig.output_logits && retLogits != nullptr) {
@@ -1803,12 +1808,17 @@ namespace fastllm {
 
             if (final_logit_softcapping > 0.0f) {
                 Mul(logits, 1.0f / final_logit_softcapping, logits);
-                logits.ToDevice(DataDevice::CPU);
-                float *logitsData = (float*)logits.cpuData;
-                int total = logits.Count(0);
-                for (int j = 0; j < total; j++) {
-                    logitsData[j] = tanh(logitsData[j]) * final_logit_softcapping;
-                }
+    #ifdef USE_CUDA
+            FastllmCudaTanhSoftcapInplace(logits, final_logit_softcapping);
+#else
+            // CPU fallback for non-CUDA build
+            logits.ToDevice(DataDevice::CPU);
+            float *logitsData = (float*)logits.cpuData;
+            int total = logits.Count(0);
+            for (int j = 0; j < total; j++) {
+                logitsData[j] = tanh(logitsData[j]) * final_logit_softcapping;
+            }
+#endif
             }
 
             if (generationConfig.output_logits && retLogits != nullptr) {
@@ -2193,12 +2203,17 @@ namespace fastllm {
 
             if (final_logit_softcapping > 0.0f) {
                 Mul(logits, 1.0f / final_logit_softcapping, logits);
-                logits.ToDevice(DataDevice::CPU);
-                float *logitsData = (float*)logits.cpuData;
-                int totalElements = logits.Count(0);
-                for (int j = 0; j < totalElements; j++) {
-                    logitsData[j] = tanh(logitsData[j]) * final_logit_softcapping;
-                }
+    #ifdef USE_CUDA
+            FastllmCudaTanhSoftcapInplace(logits, final_logit_softcapping);
+#else
+            // CPU fallback for non-CUDA build
+            logits.ToDevice(DataDevice::CPU);
+            float *logitsData = (float*)logits.cpuData;
+            int total = logits.Count(0);
+            for (int j = 0; j < total; j++) {
+                logitsData[j] = tanh(logitsData[j]) * final_logit_softcapping;
+            }
+#endif
             }
 
             if (generationConfigs[0].output_logits && retLogits != nullptr) {

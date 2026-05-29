@@ -2577,6 +2577,74 @@ bool FastllmCudaSigmoid(const fastllm::Data &input, fastllm::Data &output) {
     FastllmCudaFinishOutput(output, cudaOutput);
     return true;
 }
+// Logit softcapping: output = tanh(input / cap) * cap
+__global__ void FastllmTanhSoftcapKernel(float* a, float* b, int len, float cap) {
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    if (idx < len) {
+        float x = a[idx] / cap;
+        float exp2x = expf(2.0f * x);
+        float tanh_x = (exp2x - 1.0f) / (exp2x + 1.0f);
+        b[idx] = tanh_x * cap;
+    }
+}
+
+__global__ void FastllmTanhSoftcapKernel(half* a, half* b, int len, float cap) {
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    if (idx < len) {
+        float x = __half2float(a[idx]) / cap;
+        float exp2x = expf(2.0f * x);
+        float tanh_x = (exp2x - 1.0f) / (exp2x + 1.0f);
+        b[idx] = __float2half(tanh_x * cap);
+    }
+}
+
+__global__ void FastllmTanhSoftcapInplaceKernel(float* data, int len, float cap) {
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    if (idx < len) {
+        float x = data[idx] / cap;
+        float exp2x = expf(2.0f * x);
+        data[idx] = (exp2x - 1.0f) / (exp2x + 1.0f) * cap;
+    }
+}
+
+__global__ void FastllmTanhSoftcapInplaceKernel(half* data, int len, float cap) {
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    if (idx < len) {
+        float x = __half2float(data[idx]) / cap;
+        float exp2x = expf(2.0f * x);
+        data[idx] = __float2half((exp2x - 1.0f) / (exp2x + 1.0f) * cap);
+    }
+}
+
+bool FastllmCudaTanhSoftcap(const fastllm::Data &input, fastllm::Data &output, float cap) {
+    int len = input.Count(0);
+    float *cudaInput = (float *) FastllmCudaPrepareInput(input);
+    float *cudaOutput = (float *) FastllmCudaPrepareOutput(output);
+    int threadPerBlock = std::min(1024, len);
+    if (input.dataType == fastllm::DataType::FLOAT32) {
+        FastllmTanhSoftcapKernel <<< (len - 1) / threadPerBlock + 1, threadPerBlock >>> (cudaInput, cudaOutput, len, cap);
+    } else if (input.dataType == fastllm::DataType::FLOAT16) {
+        FastllmTanhSoftcapKernel <<< (len - 1) / threadPerBlock + 1, threadPerBlock >>> ((half*)cudaInput, (half*)cudaOutput, len, cap);
+    }
+    FastllmCudaFinishInput(input, cudaInput);
+    FastllmCudaFinishOutput(output, cudaOutput);
+    return true;
+}
+
+bool FastllmCudaTanhSoftcapInplace(fastllm::Data &data, float cap) {
+    int len = data.Count(0);
+    float *cudaData = (float *) FastllmCudaPrepareInput(data);
+    int threadPerBlock = std::min(1024, len);
+    if (data.dataType == fastllm::DataType::FLOAT32) {
+        FastllmTanhSoftcapInplaceKernel <<< (len - 1) / threadPerBlock + 1, threadPerBlock >>> (cudaData, len, cap);
+    } else if (data.dataType == fastllm::DataType::FLOAT16) {
+        FastllmTanhSoftcapInplaceKernel <<< (len - 1) / threadPerBlock + 1, threadPerBlock >>> ((half*)cudaData, len, cap);
+    }
+    FastllmCudaFinishInput(data, cudaData);
+    return true;
+}
+
+
 
 bool FastllmCudaMambaSoftplus(const fastllm::Data &input, fastllm::Data &output, fastllm::Data &aLogData, fastllm::Data &dtBiasData) {
     int dimsLen = input.dims.size();
