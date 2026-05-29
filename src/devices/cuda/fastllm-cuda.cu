@@ -1,4 +1,4 @@
-/* #include <thrust/device_vector.h>
+﻿/* #include <thrust/device_vector.h>
 #include <thrust/sort.h>
 #include <thrust/sequence.h>
 #include <thrust/gather.h>
@@ -153,7 +153,7 @@ std::vector <long long> FastllmCudaGetFreeSizes() {
     }
     std::vector <long long> ret;
     
-    // 遍历所有设备  
+    // éåŽ†æ‰€æœ‰è®¾å¤‡  
     int id = -1;
     cudaGetDevice(&id);
 
@@ -165,7 +165,7 @@ std::vector <long long> FastllmCudaGetFreeSizes() {
             // printf("  Compute capability: %d.%d\n", prop.major, prop.minor);
             // printf("  Total global memory: %zu bytes\n", prop.totalGlobalMem);
             
-            // 获取当前设备的显存使用情况  
+            // èŽ·å–å½“å‰è®¾å¤‡çš„æ˜¾å­˜ä½¿ç”¨æƒ…å†µ  
             cudaSetDevice(i);
             size_t free = 0, total = 0;
             cudaMemGetInfo(&free, &total);
@@ -574,7 +574,7 @@ __global__ void FastllmGegluKernel(__nv_bfloat16* __restrict__ a, __nv_bfloat16*
     }
 }
 
-// CrossSwiglu: 交替存储格式, y[i] = x[i*2+1] * silu(x[i*2])
+// CrossSwiglu: äº¤æ›¿å­˜å‚¨æ ¼å¼, y[i] = x[i*2+1] * silu(x[i*2])
 __global__ void FastllmCrossSwigluKernel(float* __restrict__ a, float* __restrict__ b, int len, int spatial, int mid) {
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
     if (idx < len) {
@@ -1198,7 +1198,7 @@ __global__ void FastllmRMSNormKernelInner1(float *input, float *weight, float *o
     int warp_id = tid / WARP_SIZE;
     int lane_id = tid % WARP_SIZE;
 
-    // 1. 向量化加载 (float4)，每个线程累加平方和
+    // 1. å‘é‡åŒ–åŠ è½½ (float4)ï¼Œæ¯ä¸ªçº¿ç¨‹ç´¯åŠ å¹³æ–¹å’Œ
     int f4_channels = channels / 4;
     const float4 *input_f4 = reinterpret_cast<const float4 *>(input);
     float sum2 = 0.0f;
@@ -1206,7 +1206,7 @@ __global__ void FastllmRMSNormKernelInner1(float *input, float *weight, float *o
         float4 v = input_f4[i];
         sum2 += v.x * v.x + v.y * v.y + v.z * v.z + v.w * v.w;
     }
-    // 处理尾部元素
+    // å¤„ç†å°¾éƒ¨å…ƒç´ 
     int tail_start = f4_channels * 4;
     for (int i = tail_start + tid; i < channels; i += THREAD_PER_BLOCK) {
         float x = input[i];
@@ -1234,14 +1234,14 @@ __global__ void FastllmRMSNormKernelInner1(float *input, float *weight, float *o
         }
         __syncthreads();
     } else {
-        // 只有一个 warp 的情况
+        // åªæœ‰ä¸€ä¸ª warp çš„æƒ…å†µ
         if (tid == 0) {
             scale = rsqrtf(sum2 / channels + eps);
         }
         __syncthreads();
     }
 
-    // 3. 向量化写出
+    // 3. å‘é‡åŒ–å†™å‡º
     float s = scale;
     float4 *output_f4 = reinterpret_cast<float4 *>(output);
     const float4 *weight_f4 = reinterpret_cast<const float4 *>(weight);
@@ -1266,7 +1266,7 @@ __global__ void FastllmRMSNormKernelInner1(half *input, float *weight, half *out
     input = input + o * channels;
     output = output + o * channels;
 
-    // 使用 warp shuffle reduction，仅需少量 shared memory 给跨 warp 汇总
+    // ä½¿ç”¨ warp shuffle reductionï¼Œä»…éœ€å°‘é‡ shared memory ç»™è·¨ warp æ±‡æ€»
     constexpr int WARP_SIZE = 32;
     constexpr int NUM_WARPS = THREAD_PER_BLOCK / WARP_SIZE;
     __shared__ float warp_sums[NUM_WARPS];
@@ -1276,7 +1276,7 @@ __global__ void FastllmRMSNormKernelInner1(half *input, float *weight, half *out
     int warp_id = tid / WARP_SIZE;
     int lane_id = tid % WARP_SIZE;
 
-    // 1. 向量化加载 (half2)，每个线程累加平方和
+    // 1. å‘é‡åŒ–åŠ è½½ (half2)ï¼Œæ¯ä¸ªçº¿ç¨‹ç´¯åŠ å¹³æ–¹å’Œ
     int half2_channels = channels / 2;
     const half2 *input_h2 = reinterpret_cast<const half2 *>(input);
     float sum2 = 0.0f;
@@ -1285,7 +1285,7 @@ __global__ void FastllmRMSNormKernelInner1(half *input, float *weight, half *out
         float2 fv = __half22float2(v);
         sum2 += fv.x * fv.x + fv.y * fv.y;
     }
-    // 处理 channels 为奇数的尾部元素
+    // å¤„ç† channels ä¸ºå¥‡æ•°çš„å°¾éƒ¨å…ƒç´ 
     if (channels & 1) {
         int last = channels - 1;
         if (tid == 0) {
@@ -1303,7 +1303,7 @@ __global__ void FastllmRMSNormKernelInner1(half *input, float *weight, half *out
     }
     __syncthreads();
 
-    // 跨 warp 汇总（由第一个 warp 完成）
+    // è·¨ warp æ±‡æ€»ï¼ˆç”±ç¬¬ä¸€ä¸ª warp å®Œæˆï¼‰
     if (warp_id == 0) {
         float val = (lane_id < NUM_WARPS) ? warp_sums[lane_id] : 0.0f;
         for (int offset = WARP_SIZE / 2; offset > 0; offset >>= 1) {
@@ -1315,7 +1315,7 @@ __global__ void FastllmRMSNormKernelInner1(half *input, float *weight, half *out
     }
     __syncthreads();
 
-    // 3. 向量化写出
+    // 3. å‘é‡åŒ–å†™å‡º
     float s = scale;
     half2 *output_h2 = reinterpret_cast<half2 *>(output);
     for (int i = tid; i < half2_channels; i += THREAD_PER_BLOCK) {
@@ -1328,7 +1328,7 @@ __global__ void FastllmRMSNormKernelInner1(half *input, float *weight, half *out
         out_f.y = fv.y * s * w1;
         output_h2[i] = __float22half2_rn(out_f);
     }
-    // 处理 channels 为奇数的尾部元素
+    // å¤„ç† channels ä¸ºå¥‡æ•°çš„å°¾éƒ¨å…ƒç´ 
     if ((channels & 1) && tid == 0) {
         int last = channels - 1;
         output[last] = __float2half(__half2float(input[last]) * s * __ldg(&weight[last]));
@@ -1350,7 +1350,7 @@ __global__ void FastllmRMSNormKernelInner1(__nv_bfloat16 *input, float *weight, 
     int warp_id = tid / WARP_SIZE;
     int lane_id = tid % WARP_SIZE;
 
-    // 1. 向量化加载 (nv_bfloat162)，每个线程累加平方和
+    // 1. å‘é‡åŒ–åŠ è½½ (nv_bfloat162)ï¼Œæ¯ä¸ªçº¿ç¨‹ç´¯åŠ å¹³æ–¹å’Œ
     int bf2_channels = channels / 2;
     const __nv_bfloat162 *input_bf2 = reinterpret_cast<const __nv_bfloat162 *>(input);
     float sum2 = 0.0f;
@@ -1388,7 +1388,7 @@ __global__ void FastllmRMSNormKernelInner1(__nv_bfloat16 *input, float *weight, 
     }
     __syncthreads();
 
-    // 3. 向量化写出
+    // 3. å‘é‡åŒ–å†™å‡º
     float s = scale;
     __nv_bfloat162 *output_bf2 = reinterpret_cast<__nv_bfloat162 *>(output);
     for (int i = tid; i < bf2_channels; i += THREAD_PER_BLOCK) {
@@ -1419,7 +1419,7 @@ __global__ void FastllmLayerNormKernelInner1(float *input, float *gamma, float *
     __shared__ float mean;
     __shared__ float var;
 
-    // 1. 每个线程计算一部分
+    // 1. æ¯ä¸ªçº¿ç¨‹è®¡ç®—ä¸€éƒ¨åˆ†
     unsigned int tid = threadIdx.x;
     float sum = 0.0, sum2 = 0.0;
     for (int i = tid; i < channels; i += THREAD_PER_BLOCK) {
@@ -1431,7 +1431,7 @@ __global__ void FastllmLayerNormKernelInner1(float *input, float *gamma, float *
     sdata2[tid] = sum2;
     __syncthreads();
 
-    // 2. 求和
+    // 2. æ±‚å’Œ
     for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
         if (tid < s) {
             sdata[tid] += sdata[tid + s];
@@ -1440,7 +1440,7 @@ __global__ void FastllmLayerNormKernelInner1(float *input, float *gamma, float *
         __syncthreads();
     }
 
-    // 3. 计算参数
+    // 3. è®¡ç®—å‚æ•°
     if (tid == 0) {
         mean = sdata[0] / channels;
         var = sdata2[0] + mean * mean * channels - 2 * mean * channels * mean;
@@ -1464,7 +1464,7 @@ __global__ void FastllmLayerNormKernelInner1(half *input, float *gamma, float *b
     __shared__ float mean;
     __shared__ float var;
 
-    // 1. 每个线程计算一部分
+    // 1. æ¯ä¸ªçº¿ç¨‹è®¡ç®—ä¸€éƒ¨åˆ†
     unsigned int tid = threadIdx.x;
     float sum = 0.0, sum2 = 0.0;
     for (int i = tid; i < channels; i += THREAD_PER_BLOCK) {
@@ -1476,7 +1476,7 @@ __global__ void FastllmLayerNormKernelInner1(half *input, float *gamma, float *b
     sdata2[tid] = sum2;
     __syncthreads();
 
-    // 2. 求和
+    // 2. æ±‚å’Œ
     for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
         if (tid < s) {
             sdata[tid] += sdata[tid + s];
@@ -1485,7 +1485,7 @@ __global__ void FastllmLayerNormKernelInner1(half *input, float *gamma, float *b
         __syncthreads();
     }
 
-    // 3. 计算参数
+    // 3. è®¡ç®—å‚æ•°
     if (tid == 0) {
         mean = sdata[0] / channels;
         var = sdata2[0] + mean * mean * channels - 2 * mean * channels * mean;
@@ -1674,7 +1674,7 @@ struct CudaMemoryBuffer {
             data(data), size(size), busy(busy) {}
 };
 std::map<int, std::vector <CudaMemoryBuffer>> cudaBuffersMap;
-std::map<int, int> cudaBuffersMinId; // 最小的空闲id
+std::map<int, int> cudaBuffersMinId; // æœ€å°çš„ç©ºé—²id
 std::map<int, size_t> noBusyCnt;
 std::map<int, std::vector <CudaMemoryBuffer>> bigBuffersMap;
 
@@ -2218,7 +2218,7 @@ void FastllmCudaClearBigBuffer() {
         auto &bigBuffers = it.second;
         std::vector <CudaMemoryBuffer> temp;
         long long littleMemSum = 0;        
-        long long littleMemSumLimit = 300 * 1024 * 1024; // 留一小部分复用  
+        long long littleMemSumLimit = 300 * 1024 * 1024; // ç•™ä¸€å°éƒ¨åˆ†å¤ç”¨  
         std::vector <std::pair <std::size_t, int > > v;
         for (int i = 0; i < bigBuffers.size(); i++) {
             if (!bigBuffers[i].busy) {
@@ -3061,7 +3061,7 @@ bool FastllmCudaTransferAttn(fastllm::Data &input) {
     return true;
 }
 
-// CUDA核函数模板，支持float / half / bfloat16
+// CUDAæ ¸å‡½æ•°æ¨¡æ¿ï¼Œæ”¯æŒfloat / half / bfloat16
 template<typename T>
 __global__ void CumSumLastDimKernel(T* data, int dim, int outer) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -3069,7 +3069,7 @@ __global__ void CumSumLastDimKernel(T* data, int dim, int outer) {
     if (tid < outer) {
         T* row = data + tid * dim;
         
-        // 对每一行进行累积和
+        // å¯¹æ¯ä¸€è¡Œè¿›è¡Œç´¯ç§¯å’Œ
         for (int j = 1; j < dim; j++) {
             float sum = FastllmCudaValueToFloat(row[j]) + FastllmCudaValueToFloat(row[j - 1]);
             row[j] = FastllmCudaFloatToValue<T>(sum);
@@ -3083,11 +3083,11 @@ bool FastllmCudaCumSumLastDim(fastllm::Data &input) {
     int dim = input.dims.back();
     int outer = input.Count(0) / dim;
     
-    // 配置CUDA执行参数
+    // é…ç½®CUDAæ‰§è¡Œå‚æ•°
     int threadsPerBlock = 256;
     int blocksPerGrid = (outer + threadsPerBlock - 1) / threadsPerBlock;
     
-    // 根据数据类型调用相应的核函数
+    // æ ¹æ®æ•°æ®ç±»åž‹è°ƒç”¨ç›¸åº”çš„æ ¸å‡½æ•°
     if (input.dataType == fastllm::DataType::FLOAT32) {
         CumSumLastDimKernel<<<blocksPerGrid, threadsPerBlock>>>(
             (float*)inputData, dim, outer);
@@ -3102,7 +3102,7 @@ bool FastllmCudaCumSumLastDim(fastllm::Data &input) {
     DeviceSync();
     FastllmCudaFinishOutput(input, inputData);
     
-    return true; // 添加返回值
+    return true; // æ·»åŠ è¿”å›žå€¼
 }
 
 template<typename T>
@@ -3149,7 +3149,7 @@ bool FastllmCudaApplyChunkDecayByLastLogG(fastllm::Data &input, const fastllm::D
     return true;
 }
 
-// CUDA核函数模板，支持float和half
+// CUDAæ ¸å‡½æ•°æ¨¡æ¿ï¼Œæ”¯æŒfloatå’Œhalf
 template<typename T>
 __global__ void CausalMaskKernel(T *data, int n, int m, int outer, int base, T maskValue) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -3176,7 +3176,7 @@ bool FastllmCudaCausalMask(fastllm::Data &input, int base, float maskValue) {
     int blockSize = 256;
     int gridSize = (total + blockSize - 1) / blockSize;
     
-    // 根据数据类型调用相应的核函数
+    // æ ¹æ®æ•°æ®ç±»åž‹è°ƒç”¨ç›¸åº”çš„æ ¸å‡½æ•°
     if (input.dataType == fastllm::DataType::FLOAT32) {
         float *floatData = (float *)inputData;
         CausalMaskKernel<float><<<gridSize, blockSize>>>(floatData, n, m, outer, base, maskValue);
@@ -3190,14 +3190,14 @@ bool FastllmCudaCausalMask(fastllm::Data &input, int base, float maskValue) {
         CausalMaskKernel<__nv_bfloat16><<<gridSize, blockSize>>>(bf16Data, n, m, outer, base, bf16MaskValue);
     }
     
-    // 等待核函数执行完成
+    // ç­‰å¾…æ ¸å‡½æ•°æ‰§è¡Œå®Œæˆ
     DeviceSync();
     
     FastllmCudaFinishOutput(input, inputData);
     return true;
 }
 
-// CUDA核函数定义
+// CUDAæ ¸å‡½æ•°å®šä¹‰
 template<typename T>
 __global__ void MakeDecayMaskKernel(const T* input, T* output, int dim, int outer) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -3227,11 +3227,11 @@ bool FastllmCudaMakeDecayMask(fastllm::Data &input, fastllm::Data &output) {
     int outer = input.Count(0) / dim;
     int total_elements = outer * dim * dim;
     
-    // 配置CUDA执行参数
+    // é…ç½®CUDAæ‰§è¡Œå‚æ•°
     int blockSize = 256;
     int gridSize = (total_elements + blockSize - 1) / blockSize;
     
-    // 根据数据类型调用相应的核函数
+    // æ ¹æ®æ•°æ®ç±»åž‹è°ƒç”¨ç›¸åº”çš„æ ¸å‡½æ•°
     if (input.dataType == fastllm::DataType::FLOAT32) {
         MakeDecayMaskKernel<float><<<gridSize, blockSize>>>(
             (float*)inputData, (float*)outputData, dim, outer);
@@ -3243,7 +3243,7 @@ bool FastllmCudaMakeDecayMask(fastllm::Data &input, fastllm::Data &output) {
             (__nv_bfloat16*)inputData, (__nv_bfloat16*)outputData, dim, outer);
     }
 
-    // 等待核函数执行完成
+    // ç­‰å¾…æ ¸å‡½æ•°æ‰§è¡Œå®Œæˆ
     DeviceSync();
     
     FastllmCudaFinishInput(input, inputData);
@@ -4086,60 +4086,60 @@ bool FastllmCudaLayerNorm(const fastllm::Data &input, fastllm::Data &gamma, fast
 }
 
 /*#ifndef USE_ROCM
-// 自定义函子，用于处理每一行的 TopK 操作  
+// è‡ªå®šä¹‰å‡½å­ï¼Œç”¨äºŽå¤„ç†æ¯ä¸€è¡Œçš„ TopK æ“ä½œ  
 struct TopKFunctor {
-    float* cudaInput;        // 指向原始输入数据的设备指针  
-    float* cudaOutput;       // 指向输出数据的设备指针  
+    float* cudaInput;        // æŒ‡å‘åŽŸå§‹è¾“å…¥æ•°æ®çš„è®¾å¤‡æŒ‡é’ˆ  
+    float* cudaOutput;       // æŒ‡å‘è¾“å‡ºæ•°æ®çš„è®¾å¤‡æŒ‡é’ˆ  
     int channels;
     int topk;
 
-    // 构造函数  
+    // æž„é€ å‡½æ•°  
     TopKFunctor(float* cudaInput, float* cudaOutput, int channels, int topk)
         : cudaInput(cudaInput), cudaOutput(cudaOutput), channels(channels), topk(topk) {}
 
-    // thrust::for_each 会为每个行索引 i 调用这个操作符  
-    // __host__ __device__ 使得函子可以在主机和设备上被调用（Thrust 要求）  
+    // thrust::for_each ä¼šä¸ºæ¯ä¸ªè¡Œç´¢å¼• i è°ƒç”¨è¿™ä¸ªæ“ä½œç¬¦  
+    // __host__ __device__ ä½¿å¾—å‡½å­å¯ä»¥åœ¨ä¸»æœºå’Œè®¾å¤‡ä¸Šè¢«è°ƒç”¨ï¼ˆThrust è¦æ±‚ï¼‰  
     __host__ __device__
     void operator()(int i) const {
         thrust::device_ptr<float> d_input(cudaInput);
         thrust::device_ptr<float> d_output(cudaOutput);
 
-        // 当前行的起始位置  
+        // å½“å‰è¡Œçš„èµ·å§‹ä½ç½®  
         thrust::device_ptr<float> row_start = d_input + i * channels;
         thrust::device_ptr<float> row_end = row_start + channels;
         
-        // 创建索引序列 [0, 1, 2, ..., channels-1]
+        // åˆ›å»ºç´¢å¼•åºåˆ— [0, 1, 2, ..., channels-1]
         thrust::device_vector<int> indices(channels);
         thrust::sequence(indices.begin(), indices.end());
         
-        // 使用zip迭代器将值和索引组合在一起  
+        // ä½¿ç”¨zipè¿­ä»£å™¨å°†å€¼å’Œç´¢å¼•ç»„åˆåœ¨ä¸€èµ·  
         auto begin = thrust::make_zip_iterator(
             thrust::make_tuple(row_start, indices.begin()));
         auto end = thrust::make_zip_iterator(
             thrust::make_tuple(row_end, indices.end()));
         
-        // 按值降序排序  
+        // æŒ‰å€¼é™åºæŽ’åº  
         thrust::sort(begin, end, 
             thrust::greater<thrust::tuple<float, int>>());
         
-        // 复制前topk个结果到输出  
+        // å¤åˆ¶å‰topkä¸ªç»“æžœåˆ°è¾“å‡º  
         for (int k = 0; k < topk; ++k) {
-            d_output[i * topk * 2 + k * 2] = indices[k];     // 索引  
-            d_output[i * topk * 2 + k * 2 + 1] = row_start[k]; // 值  
+            d_output[i * topk * 2 + k * 2] = indices[k];     // ç´¢å¼•  
+            d_output[i * topk * 2 + k * 2 + 1] = row_start[k]; // å€¼  
         }
     }
 };
 
-// 主函数/调用部分  
+// ä¸»å‡½æ•°/è°ƒç”¨éƒ¨åˆ†  
 void topk_parallel_thrust(float* d_input, float* d_output, int outer, int channels, int topk) {
-    // 创建函子实例  
+    // åˆ›å»ºå‡½å­å®žä¾‹  
     TopKFunctor functor(d_input, d_output, channels, topk);
 
-    // 使用 thrust::for_each 和 counting_iterator 来并行处理每一行  
+    // ä½¿ç”¨ thrust::for_each å’Œ counting_iterator æ¥å¹¶è¡Œå¤„ç†æ¯ä¸€è¡Œ  
     thrust::for_each(
-        thrust::counting_iterator<int>(0),      // 起始迭代器 (0)
-        thrust::counting_iterator<int>(outer),  // 结束迭代器 (outer)
-        functor                                 // 应用于每个元素的函子  
+        thrust::counting_iterator<int>(0),      // èµ·å§‹è¿­ä»£å™¨ (0)
+        thrust::counting_iterator<int>(outer),  // ç»“æŸè¿­ä»£å™¨ (outer)
+        functor                                 // åº”ç”¨äºŽæ¯ä¸ªå…ƒç´ çš„å‡½å­  
     );
 }
 #endif */
@@ -4279,7 +4279,7 @@ bool FastllmCudaSelectExpert(const fastllm::Data &logits, const fastllm::Data *g
     fastllm::Data &index, fastllm::Data &score, int topk, bool needNorm, float routeScale) {
     if (topk > 50) {
         printf("SelectExpert: unsupport topk > 50, falling back to CPU implementation.\n");
-        return false; // 返回 false 表示不支持，应该回退到 CPU
+        return false; // è¿”å›ž false è¡¨ç¤ºä¸æ”¯æŒï¼Œåº”è¯¥å›žé€€åˆ° CPU
     }
     
     float *cudaLogits = (float *) FastllmCudaPrepareInput(logits);
@@ -4726,15 +4726,15 @@ bool FastllmCudaLlamaRotatePosition2DPart(fastllm::Data &data, const fastllm::Da
 
 // ============================================================
 // Fused QKV RMSNorm + RoPE Kernel
-// 在一个 kernel 里对 qkv 拼接张量完成:
-//   - 对 q 部分: RMSNorm + RoPE
-//   - 对 k 部分: RMSNorm + RoPE
-//   - v 部分: 不做处理
+// åœ¨ä¸€ä¸ª kernel é‡Œå¯¹ qkv æ‹¼æŽ¥å¼ é‡å®Œæˆ:
+//   - å¯¹ q éƒ¨åˆ†: RMSNorm + RoPE
+//   - å¯¹ k éƒ¨åˆ†: RMSNorm + RoPE
+//   - v éƒ¨åˆ†: ä¸åšå¤„ç†
 //
-// qkv 布局: [bs * seqlen, total_dim]
+// qkv å¸ƒå±€: [bs * seqlen, total_dim]
 // total_dim = q_heads * head_dim + k_heads * head_dim + v_heads * head_dim
 //
-// 每个 block 处理一个 (token, head) 对应的 head_dim 维向量
+// æ¯ä¸ª block å¤„ç†ä¸€ä¸ª (token, head) å¯¹åº”çš„ head_dim ç»´å‘é‡
 // grid: (bs * seqlen * (q_heads + k_heads))
 // ============================================================
 template <int THREAD_PER_BLOCK>
@@ -4763,9 +4763,9 @@ __global__ void FastllmQKVRMSNormRopeKernel(
     int b = token_id / seqlen;   // batch index
     int l = token_id % seqlen;   // position in sequence
 
-    // 确定当前 head 在 qkv 中的偏移
-    // q 部分: offset = head_id * head_dim
-    // k 部分: offset = q_heads * head_dim + (head_id - q_heads) * head_dim
+    // ç¡®å®šå½“å‰ head åœ¨ qkv ä¸­çš„åç§»
+    // q éƒ¨åˆ†: offset = head_id * head_dim
+    // k éƒ¨åˆ†: offset = q_heads * head_dim + (head_id - q_heads) * head_dim
     bool is_q = (head_id < q_heads);
     int offset_in_total;
     float *normWeight;
@@ -4781,7 +4781,7 @@ __global__ void FastllmQKVRMSNormRopeKernel(
     unsigned int tid = threadIdx.x;
 
     // ======== Step 1: RMSNorm ========
-    // 1.1 计算平方和
+    // 1.1 è®¡ç®—å¹³æ–¹å’Œ
     __shared__ float sdata[THREAD_PER_BLOCK];
     __shared__ float scale;
 
@@ -4793,7 +4793,7 @@ __global__ void FastllmQKVRMSNormRopeKernel(
     sdata[tid] = local_sum2;
     __syncthreads();
 
-    // 1.2 reduce 求和
+    // 1.2 reduce æ±‚å’Œ
     for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
         if (tid < s) {
             sdata[tid] += sdata[tid + s];
@@ -4801,22 +4801,22 @@ __global__ void FastllmQKVRMSNormRopeKernel(
         __syncthreads();
     }
 
-    // 1.3 计算 scale
+    // 1.3 è®¡ç®— scale
     if (tid == 0) {
         scale = 1.0f / sqrtf(sdata[0] / head_dim + eps);
     }
     __syncthreads();
 
-    // 1.4 应用 RMSNorm: output[i] = input[i] * scale * weight[i]
-    // 同时用 shared memory 暂存归一化后的值以便 RoPE 使用
-    // 注意: head_dim 通常是 128，THREAD_PER_BLOCK=128 时每个线程正好处理 1 个元素
+    // 1.4 åº”ç”¨ RMSNorm: output[i] = input[i] * scale * weight[i]
+    // åŒæ—¶ç”¨ shared memory æš‚å­˜å½’ä¸€åŒ–åŽçš„å€¼ä»¥ä¾¿ RoPE ä½¿ç”¨
+    // æ³¨æ„: head_dim é€šå¸¸æ˜¯ 128ï¼ŒTHREAD_PER_BLOCK=128 æ—¶æ¯ä¸ªçº¿ç¨‹æ­£å¥½å¤„ç† 1 ä¸ªå…ƒç´ 
     for (int i = tid; i < head_dim; i += THREAD_PER_BLOCK) {
         base[i] = base[i] * scale * normWeight[i];
     }
     __syncthreads();
 
     // ======== Step 2: RoPE Encoding ========
-    // RoPE 只处理前 rotateDim 个维度 (每次处理一对)
+    // RoPE åªå¤„ç†å‰ rotateDim ä¸ªç»´åº¦ (æ¯æ¬¡å¤„ç†ä¸€å¯¹)
     int half_rotate = rotateDim / 2;
     if ((int)tid < half_rotate) {
         int j = tid;
@@ -5044,7 +5044,7 @@ bool FastllmCudaQKVRMSNormRope(
     int grid_size = outer * total_heads;
     int partStride = (int)positionIds.dims.back();
 
-    // 选择 block 大小: head_dim 通常是 128
+    // é€‰æ‹© block å¤§å°: head_dim é€šå¸¸æ˜¯ 128
     if (qkv.dataType == fastllm::DataType::FLOAT32) {
         if (head_dim <= 64) {
             FastllmQKVRMSNormRopeKernel<64> <<< grid_size, 64 >>>(
@@ -5104,55 +5104,55 @@ bool FastllmCudaQKVRMSNormRope(
 }
 
 // ============================================================
-// 融合 QKVRMSNormRope + Split + AppendPagedCacheBatch
-// 每个 block 处理一个 (token, head) 对应的 head_dim 维向量
+// èžåˆ QKVRMSNormRope + Split + AppendPagedCacheBatch
+// æ¯ä¸ª block å¤„ç†ä¸€ä¸ª (token, head) å¯¹åº”çš„ head_dim ç»´å‘é‡
 // grid: (bs * seqlen * (q_heads + k_heads + v_heads))
-//   - head_id < q_heads: Q head -> RMSNorm + RoPE -> 写入 qOutput (permuted)
-//   - q_heads <= head_id < q_heads + k_heads: K head -> RMSNorm + RoPE -> 写入 paged K cache
-//   - head_id >= q_heads + k_heads: V head -> 直接拷贝到 paged V cache
+//   - head_id < q_heads: Q head -> RMSNorm + RoPE -> å†™å…¥ qOutput (permuted)
+//   - q_heads <= head_id < q_heads + k_heads: K head -> RMSNorm + RoPE -> å†™å…¥ paged K cache
+//   - head_id >= q_heads + k_heads: V head -> ç›´æŽ¥æ‹·è´åˆ° paged V cache
 // ============================================================
 template <int THREAD_PER_BLOCK, typename T, typename TKV>
 __global__ void FastllmQKVRMSNormRopeSplitAppendPagedCacheKernel(
-    T *qkvData,              // [bs, seqlen, total_dim], 物理布局; 逻辑含义为 batch 个 token
+    T *qkvData,              // [bs, seqlen, total_dim], ç‰©ç†å¸ƒå±€; é€»è¾‘å«ä¹‰ä¸º batch ä¸ª token
     float *qNormWeight,      // [head_dim]
     float *kNormWeight,      // [head_dim]
     float *positionIds,      // [bs, partStride]
     T *qOutputData,          // [bsz * q_heads, seqlen, head_dim] (permuted output)
     TKV *pagedKData,         // paged K cache raw data
     TKV *pagedVData,         // paged V cache raw data
-    int32_t *insertIndexs,   // [batch] page index for each batch (逻辑 batch)
-    int32_t *insertPositions,// [batch] page offset for each batch (逻辑 batch)
+    int32_t *insertIndexs,   // [batch] page index for each batch (é€»è¾‘ batch)
+    int32_t *insertPositions,// [batch] page offset for each batch (é€»è¾‘ batch)
     int32_t *lastPageLens,   // optional [batch], filled with page offset after append
-    int outer,               // bs * seqlen = 总 token 数
+    int outer,               // bs * seqlen = æ€» token æ•°
     int total_dim,           // (q_heads + k_heads + v_heads) * head_dim
     int q_heads,
     int k_heads,
     int v_heads,
     int head_dim,
-    int bs,                  // qkv.dims[0], 物理 batch 维
-    int seqlen,              // qkv.dims[1], 物理 seqlen 维
+    int bs,                  // qkv.dims[0], ç‰©ç† batch ç»´
+    int seqlen,              // qkv.dims[1], ç‰©ç† seqlen ç»´
     int partStride,          // positionIds.dims.back()
     int rotateDim,
     float eps,
     float ropeTheta,
     float ropeScale,
     int pageLen,             // page length for paged cache
-    int batch,               // 逻辑 batch 数（= insertIndexs 长度）
-    int doQKNorm             // 是否做 QK RMSNorm（0 = 跳过）
+    int batch,               // é€»è¾‘ batch æ•°ï¼ˆ= insertIndexs é•¿åº¦ï¼‰
+    int doQKNorm             // æ˜¯å¦åš QK RMSNormï¼ˆ0 = è·³è¿‡ï¼‰
 ) {
     int total_heads = q_heads + k_heads + v_heads;
     int block_id = blockIdx.x;
-    int token_id = block_id / total_heads;  // [0, outer), 即第几个 token
+    int token_id = block_id / total_heads;  // [0, outer), å³ç¬¬å‡ ä¸ª token
     int head_id = block_id % total_heads;
 
-    // 物理维度索引（用于定位 qkv 和 positionIds）
-    int phys_b = token_id / seqlen;   // qkv 的物理 batch 索引
-    int phys_l = token_id % seqlen;   // qkv 的物理 seq 索引
+    // ç‰©ç†ç»´åº¦ç´¢å¼•ï¼ˆç”¨äºŽå®šä½ qkv å’Œ positionIdsï¼‰
+    int phys_b = token_id / seqlen;   // qkv çš„ç‰©ç† batch ç´¢å¼•
+    int phys_l = token_id % seqlen;   // qkv çš„ç‰©ç† seq ç´¢å¼•
 
-    // 逻辑 batch 索引（用于 insertIndexs / insertPositions）
-    // 在 decode 路径: bs=1, seqlen=batch, 逻辑 batch_idx = token_id
-    // 在单 batch 路径: bs=1, seqlen=1, batch=1, 逻辑 batch_idx = 0
-    int batch_idx = token_id;  // 每个 token 对应一个逻辑 batch（decode 模式下 seqlen_per_batch=1）
+    // é€»è¾‘ batch ç´¢å¼•ï¼ˆç”¨äºŽ insertIndexs / insertPositionsï¼‰
+    // åœ¨ decode è·¯å¾„: bs=1, seqlen=batch, é€»è¾‘ batch_idx = token_id
+    // åœ¨å• batch è·¯å¾„: bs=1, seqlen=1, batch=1, é€»è¾‘ batch_idx = 0
+    int batch_idx = token_id;  // æ¯ä¸ª token å¯¹åº”ä¸€ä¸ªé€»è¾‘ batchï¼ˆdecode æ¨¡å¼ä¸‹ seqlen_per_batch=1ï¼‰
 
     unsigned int tid = threadIdx.x;
 
@@ -5160,7 +5160,7 @@ __global__ void FastllmQKVRMSNormRopeSplitAppendPagedCacheKernel(
         lastPageLens[batch_idx] = insertPositions[batch_idx] + 1;
     }
 
-    // 确定当前 head 在 qkv 中的偏移
+    // ç¡®å®šå½“å‰ head åœ¨ qkv ä¸­çš„åç§»
     int offset_in_total;
     if (head_id < q_heads) {
         offset_in_total = head_id * head_dim;
@@ -5217,7 +5217,7 @@ __global__ void FastllmQKVRMSNormRopeSplitAppendPagedCacheKernel(
         }
 
         // Step 2: RoPE Encoding
-        // positionIds 用物理索引 [phys_b * partStride + phys_l]
+        // positionIds ç”¨ç‰©ç†ç´¢å¼• [phys_b * partStride + phys_l]
         int half_rotate = rotateDim / 2;
         if ((int)tid < half_rotate) {
             int j = tid;
@@ -5236,17 +5236,17 @@ __global__ void FastllmQKVRMSNormRopeSplitAppendPagedCacheKernel(
 
         // Step 3: Write output
         if (head_id < q_heads) {
-            // Q head: 写入 qOutput，布局 [bsz * q_heads, seqlen, head_dim]
+            // Q head: å†™å…¥ qOutputï¼Œå¸ƒå±€ [bsz * q_heads, seqlen, head_dim]
             // Permute: [bs, seqlen, q_heads, head_dim] -> [bs, q_heads, seqlen, head_dim] -> [bs * q_heads, seqlen, head_dim]
-            // 即 (phys_b, phys_l, head_id) -> (phys_b * q_heads + head_id, phys_l, :)
+            // å³ (phys_b, phys_l, head_id) -> (phys_b * q_heads + head_id, phys_l, :)
             T *dst = qOutputData + ((phys_b * q_heads + head_id) * seqlen + phys_l) * head_dim;
             for (int i = tid; i < head_dim; i += THREAD_PER_BLOCK) {
                 dst[i] = base[i];
             }
         } else {
-            // K head: 直接写入 paged K cache
+            // K head: ç›´æŽ¥å†™å…¥ paged K cache
             // pagedData layout: [maxPages, pageLen, numHeads, headDim]
-            // 用逻辑 batch_idx 索引 insertIndexs / insertPositions
+            // ç”¨é€»è¾‘ batch_idx ç´¢å¼• insertIndexs / insertPositions
             int kh = head_id - q_heads;
             int pageIdx = insertIndexs[batch_idx];
             int pageOffset = insertPositions[batch_idx];
@@ -5258,8 +5258,8 @@ __global__ void FastllmQKVRMSNormRopeSplitAppendPagedCacheKernel(
             }
         }
     } else {
-        // ======== V head: 直接拷贝到 paged V cache（无需 RMSNorm/RoPE）========
-        // 用逻辑 batch_idx 索引 insertIndexs / insertPositions
+        // ======== V head: ç›´æŽ¥æ‹·è´åˆ° paged V cacheï¼ˆæ— éœ€ RMSNorm/RoPEï¼‰========
+        // ç”¨é€»è¾‘ batch_idx ç´¢å¼• insertIndexs / insertPositions
         int vh = head_id - q_heads - k_heads;
         int pageIdx = insertIndexs[batch_idx];
         int pageOffset = insertPositions[batch_idx];
@@ -5300,7 +5300,7 @@ bool FastllmCudaQKVRMSNormRopeSplitAppendPagedCache(
     int grid_size = outer * total_heads;
     int partStride = (int)positionIds.dims.back();
 
-    // 确保 qOutput 已分配
+    // ç¡®ä¿ qOutput å·²åˆ†é…
     float *cudaQOutput = (float*)qOutput.cudaData;
 
     auto launch = [&](auto TPB, auto *qkvPtr, auto *qOutputPtr, auto *pagedTag) {
@@ -5345,7 +5345,7 @@ bool FastllmCudaQKVRMSNormRopeSplitAppendPagedCache(
     }
 
     FastllmCudaFinishInput(positionIds, cudaPositionIds);
-    // 注意: 不需要 FinishOutput qkv，因为 qkv 内容已经不再需要
+    // æ³¨æ„: ä¸éœ€è¦ FinishOutput qkvï¼Œå› ä¸º qkv å†…å®¹å·²ç»ä¸å†éœ€è¦
     return true;
 }
 
@@ -5689,47 +5689,47 @@ __global__ void Conv1DPerChannelKernel(
     int padding,
     int groups) {
     
-    // 计算当前线程处理的位置
+    // è®¡ç®—å½“å‰çº¿ç¨‹å¤„ç†çš„ä½ç½®
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int totalElements = batchSize * outputChannels * outputLength;
     
     if (tid >= totalElements) return;
     
-    // 解析输出位置 (batch, channel, position)
+    // è§£æžè¾“å‡ºä½ç½® (batch, channel, position)
     int ol = tid % outputLength;
     int oc = (tid / outputLength) % outputChannels;
     int b = tid / (outputChannels * outputLength);
     
-    // 对于逐通道卷积，每个输出通道对应一个输入通道
-    int g = oc;  // group index (因为 groups = inputChannels)
-    int ic = g;  // 对应的输入通道
+    // å¯¹äºŽé€é€šé“å·ç§¯ï¼Œæ¯ä¸ªè¾“å‡ºé€šé“å¯¹åº”ä¸€ä¸ªè¾“å…¥é€šé“
+    int g = oc;  // group index (å› ä¸º groups = inputChannels)
+    int ic = g;  // å¯¹åº”çš„è¾“å…¥é€šé“
     
-    // 计算输入起始位置
+    // è®¡ç®—è¾“å…¥èµ·å§‹ä½ç½®
     int il_start = ol * stride - padding;
     
-    // 初始化输出值（加上bias）
+    // åˆå§‹åŒ–è¾“å‡ºå€¼ï¼ˆåŠ ä¸Šbiasï¼‰
     float value = bias ? bias[oc] : 0.0f;
     
-    // 获取权重和输入的指针
+    // èŽ·å–æƒé‡å’Œè¾“å…¥çš„æŒ‡é’ˆ
     const float* curWeight = weight + oc * kernelSize;
     const T* curInput = input + b * inputChannels * inputLength + ic * inputLength;
     
-    // 执行卷积
+    // æ‰§è¡Œå·ç§¯
     #pragma unroll
     for (int k = 0; k < kernelSize; k++) {
         int inputPos = il_start + k;
         
-        // 边界检查
+        // è¾¹ç•Œæ£€æŸ¥
         if (inputPos >= 0 && inputPos < inputLength) {
             value += (float)curInput[inputPos] * curWeight[k];
         }
     }
     
-    // 写入输出
+    // å†™å…¥è¾“å‡º
     output[tid] = (T)value;
 }
 
-// 主函数
+// ä¸»å‡½æ•°
 bool FastllmCudaConv1DPerChannelFloat32(
     const fastllm::Data &input, 
     fastllm::Data &weight, 
@@ -5747,16 +5747,16 @@ bool FastllmCudaConv1DPerChannelFloat32(
     int inputLength = dims[2];
     int outputLength = (inputLength + 2 * padding - kernelSize) / stride + 1;
     
-    // 准备输出维度
+    // å‡†å¤‡è¾“å‡ºç»´åº¦
     output.Resize({batchSize, outputChannels, outputLength});
     
-    // 获取设备指针
+    // èŽ·å–è®¾å¤‡æŒ‡é’ˆ
     float *d_input = (float*)input.cudaData;
     float *d_weight = (float*)weight.cudaData;
     float *d_bias = bias.dims.size() > 0 ? (float*)bias.cudaData : nullptr;
     float *d_output = (float*)output.cudaData;
     
-    // 配置kernel参数
+    // é…ç½®kernelå‚æ•°
     int totalElements = batchSize * outputChannels * outputLength;
     int threadsPerBlock = 256;
     int blocksPerGrid = (totalElements + threadsPerBlock - 1) / threadsPerBlock;
@@ -7178,23 +7178,23 @@ void FastllmPickInput(uint8_t *input, uint8_t *partInput, int rows, int cols, in
     }
 }
 
-// CUDA Kernel 函数
-// 每个线程负责搬运一个 uint8_t 元素
+// CUDA Kernel å‡½æ•°
+// æ¯ä¸ªçº¿ç¨‹è´Ÿè´£æ¬è¿ä¸€ä¸ª uint8_t å…ƒç´ 
 __global__ void FastllmPickInputKernel(uint8_t *input, uint8_t *partInput, int rows, int cols, int *index) {
-    // blockIdx.y 对应行索引 i
+    // blockIdx.y å¯¹åº”è¡Œç´¢å¼• i
     int row = blockIdx.y;
-    // blockIdx.x * blockDim.x + threadIdx.x 对应列索引 j
+    // blockIdx.x * blockDim.x + threadIdx.x å¯¹åº”åˆ—ç´¢å¼• j
     int col = blockIdx.x * blockDim.x + threadIdx.x;
-    // 边界检查：防止越界访问
+    // è¾¹ç•Œæ£€æŸ¥ï¼šé˜²æ­¢è¶Šç•Œè®¿é—®
     if (row < rows && col < cols) {
-        // 读取该行在源数据中对应的真实行号
+        // è¯»å–è¯¥è¡Œåœ¨æºæ•°æ®ä¸­å¯¹åº”çš„çœŸå®žè¡Œå·
         int srcRow = index[row];
         
-        // 计算扁平化的内存偏移量
-        // 使用 long long 防止在大模型显存较大时 int32 溢出
+        // è®¡ç®—æ‰å¹³åŒ–çš„å†…å­˜åç§»é‡
+        // ä½¿ç”¨ long long é˜²æ­¢åœ¨å¤§æ¨¡åž‹æ˜¾å­˜è¾ƒå¤§æ—¶ int32 æº¢å‡º
         long long dstOffset = (long long)row * cols + col;
         long long srcOffset = (long long)srcRow * cols + col;
-        // 执行拷贝
+        // æ‰§è¡Œæ‹·è´
         partInput[dstOffset] = input[srcOffset];
     }
 }
@@ -7210,9 +7210,9 @@ __global__ void FastllmPickInputKernelVec16(const uint4 *__restrict__ input,
     }
 }
 
-// Host 调用函数
+// Host è°ƒç”¨å‡½æ•°
 void FastllmCudaPickInput(uint8_t *input, uint8_t *partInput, int rows, int cols, int *index) {
-    // 设定 Block 大小：256 是通过是一个比较通用的高性能值
+    // è®¾å®š Block å¤§å°ï¼š256 æ˜¯é€šè¿‡æ˜¯ä¸€ä¸ªæ¯”è¾ƒé€šç”¨çš„é«˜æ€§èƒ½å€¼
     dim3 block(256);
     if ((cols & 15) == 0 &&
         (((uintptr_t)input | (uintptr_t)partInput) & 15) == 0) {
@@ -7222,68 +7222,68 @@ void FastllmCudaPickInput(uint8_t *input, uint8_t *partInput, int rows, int cols
             (const uint4*)input, (uint4*)partInput, rows, cols16, index);
         return;
     }
-    // 设定 Grid 大小：
-    // x 维度：覆盖所有列 (cols)，向上取整除以 256
-    // y 维度：覆盖所有行 (rows)
+    // è®¾å®š Grid å¤§å°ï¼š
+    // x ç»´åº¦ï¼šè¦†ç›–æ‰€æœ‰åˆ— (cols)ï¼Œå‘ä¸Šå–æ•´é™¤ä»¥ 256
+    // y ç»´åº¦ï¼šè¦†ç›–æ‰€æœ‰è¡Œ (rows)
     dim3 grid((cols + 255) / 256, rows);
-    // 启动 Kernel
+    // å¯åŠ¨ Kernel
     FastllmPickInputKernel<<<grid, block>>>(input, partInput, rows, cols, index);
 }
 
-// CUDA Kernel 函数
-// 每个线程负责一个 float 元素的计算和累加
+// CUDA Kernel å‡½æ•°
+// æ¯ä¸ªçº¿ç¨‹è´Ÿè´£ä¸€ä¸ª float å…ƒç´ çš„è®¡ç®—å’Œç´¯åŠ 
 __global__ void FastllmPickOutputKernel(float *partOutput, float *output, int rows, int cols, int *index, float *scales) {
-    // blockIdx.y 对应行索引 i (partOutput 中的行)
+    // blockIdx.y å¯¹åº”è¡Œç´¢å¼• i (partOutput ä¸­çš„è¡Œ)
     int i = blockIdx.y;
-    // blockIdx.x * blockDim.x + threadIdx.x 对应列索引 j
+    // blockIdx.x * blockDim.x + threadIdx.x å¯¹åº”åˆ—ç´¢å¼• j
     int j = blockIdx.x * blockDim.x + threadIdx.x;
-    // 边界检查
+    // è¾¹ç•Œæ£€æŸ¥
     if (i < rows && j < cols) {
-        // 获取目标行号 idx 和 缩放因子 sca
+        // èŽ·å–ç›®æ ‡è¡Œå· idx å’Œ ç¼©æ”¾å› å­ sca
         int idx = index[i];
         float sca = scales[i];
-        // 计算扁平化的内存偏移量
-        // 使用 long long 防止大模型显存地址溢出
+        // è®¡ç®—æ‰å¹³åŒ–çš„å†…å­˜åç§»é‡
+        // ä½¿ç”¨ long long é˜²æ­¢å¤§æ¨¡åž‹æ˜¾å­˜åœ°å€æº¢å‡º
         long long srcOffset = (long long)i * cols + j;
         long long dstOffset = (long long)idx * cols + j;
-        // 执行 CPU 逻辑: output[idx * cols + j] += sca * partOutput[i * cols + j];
-        // 注意：这里假设 index 映射的目标行通常是唯一的（在 LLM Batch 推理中通常如此）。
-        // 如果多个 i 映射到同一个 idx，这里存在竞争冒险，但在 FastLLM 上下文中通常是 Scatter 操作。
+        // æ‰§è¡Œ CPU é€»è¾‘: output[idx * cols + j] += sca * partOutput[i * cols + j];
+        // æ³¨æ„ï¼šè¿™é‡Œå‡è®¾ index æ˜ å°„çš„ç›®æ ‡è¡Œé€šå¸¸æ˜¯å”¯ä¸€çš„ï¼ˆåœ¨ LLM Batch æŽ¨ç†ä¸­é€šå¸¸å¦‚æ­¤ï¼‰ã€‚
+        // å¦‚æžœå¤šä¸ª i æ˜ å°„åˆ°åŒä¸€ä¸ª idxï¼Œè¿™é‡Œå­˜åœ¨ç«žäº‰å†’é™©ï¼Œä½†åœ¨ FastLLM ä¸Šä¸‹æ–‡ä¸­é€šå¸¸æ˜¯ Scatter æ“ä½œã€‚
         output[dstOffset] += sca * partOutput[srcOffset];
     }
 }
-// Host 调用函数
+// Host è°ƒç”¨å‡½æ•°
 void FastllmCudaPickOutput(float *partOutput, float *output, int rows, int cols, int *index, float *scales) {
-    // 设定 Block 大小：使用 256 作为通用高性能值
+    // è®¾å®š Block å¤§å°ï¼šä½¿ç”¨ 256 ä½œä¸ºé€šç”¨é«˜æ€§èƒ½å€¼
     dim3 block(256);
     
-    // 设定 Grid 大小：
-    // x 维度：覆盖所有列 (cols)，向上取整
-    // y 维度：覆盖所有行 (rows)
+    // è®¾å®š Grid å¤§å°ï¼š
+    // x ç»´åº¦ï¼šè¦†ç›–æ‰€æœ‰åˆ— (cols)ï¼Œå‘ä¸Šå–æ•´
+    // y ç»´åº¦ï¼šè¦†ç›–æ‰€æœ‰è¡Œ (rows)
     dim3 grid((cols + 255) / 256, rows);
-    // 启动 Kernel
+    // å¯åŠ¨ Kernel
     FastllmPickOutputKernel<<<grid, block>>>(partOutput, output, rows, cols, index, scales);
 }
 
-// CUDA Kernel 函数
-// 每个线程负责一个 float 元素的计算和累加
+// CUDA Kernel å‡½æ•°
+// æ¯ä¸ªçº¿ç¨‹è´Ÿè´£ä¸€ä¸ª float å…ƒç´ çš„è®¡ç®—å’Œç´¯åŠ 
 __global__ void FastllmPickOutputKernel(half *partOutput, half *output, int rows, int cols, int *index, float *scales) {
-    // blockIdx.y 对应行索引 i (partOutput 中的行)
+    // blockIdx.y å¯¹åº”è¡Œç´¢å¼• i (partOutput ä¸­çš„è¡Œ)
     int i = blockIdx.y;
-    // blockIdx.x * blockDim.x + threadIdx.x 对应列索引 j
+    // blockIdx.x * blockDim.x + threadIdx.x å¯¹åº”åˆ—ç´¢å¼• j
     int j = blockIdx.x * blockDim.x + threadIdx.x;
-    // 边界检查
+    // è¾¹ç•Œæ£€æŸ¥
     if (i < rows && j < cols) {
-        // 获取目标行号 idx 和 缩放因子 sca
+        // èŽ·å–ç›®æ ‡è¡Œå· idx å’Œ ç¼©æ”¾å› å­ sca
         int idx = index[i];
         float sca = scales[i];
-        // 计算扁平化的内存偏移量
-        // 使用 long long 防止大模型显存地址溢出
+        // è®¡ç®—æ‰å¹³åŒ–çš„å†…å­˜åç§»é‡
+        // ä½¿ç”¨ long long é˜²æ­¢å¤§æ¨¡åž‹æ˜¾å­˜åœ°å€æº¢å‡º
         long long srcOffset = (long long)i * cols + j;
         long long dstOffset = (long long)idx * cols + j;
-        // 执行 CPU 逻辑: output[idx * cols + j] += sca * partOutput[i * cols + j];
-        // 注意：这里假设 index 映射的目标行通常是唯一的（在 LLM Batch 推理中通常如此）。
-        // 如果多个 i 映射到同一个 idx，这里存在竞争冒险，但在 FastLLM 上下文中通常是 Scatter 操作。
+        // æ‰§è¡Œ CPU é€»è¾‘: output[idx * cols + j] += sca * partOutput[i * cols + j];
+        // æ³¨æ„ï¼šè¿™é‡Œå‡è®¾ index æ˜ å°„çš„ç›®æ ‡è¡Œé€šå¸¸æ˜¯å”¯ä¸€çš„ï¼ˆåœ¨ LLM Batch æŽ¨ç†ä¸­é€šå¸¸å¦‚æ­¤ï¼‰ã€‚
+        // å¦‚æžœå¤šä¸ª i æ˜ å°„åˆ°åŒä¸€ä¸ª idxï¼Œè¿™é‡Œå­˜åœ¨ç«žäº‰å†’é™©ï¼Œä½†åœ¨ FastLLM ä¸Šä¸‹æ–‡ä¸­é€šå¸¸æ˜¯ Scatter æ“ä½œã€‚
         output[dstOffset] = (half)((float)output[dstOffset] + sca * (float)partOutput[srcOffset]);
     }
 }
@@ -7305,39 +7305,39 @@ __global__ void FastllmPickOutputHalf2Kernel(const half2 *__restrict__ partOutpu
     }
 }
 
-// CUDA Kernel 函数
-// 每个线程负责一个 bfloat16 元素的计算和累加
+// CUDA Kernel å‡½æ•°
+// æ¯ä¸ªçº¿ç¨‹è´Ÿè´£ä¸€ä¸ª bfloat16 å…ƒç´ çš„è®¡ç®—å’Œç´¯åŠ 
 __global__ void FastllmPickOutputKernel(__nv_bfloat16 *partOutput, __nv_bfloat16 *output, int rows, int cols, int *index, float *scales) {
-    // blockIdx.y 对应行索引 i (partOutput 中的行)
+    // blockIdx.y å¯¹åº”è¡Œç´¢å¼• i (partOutput ä¸­çš„è¡Œ)
     int i = blockIdx.y;
-    // blockIdx.x * blockDim.x + threadIdx.x 对应列索引 j
+    // blockIdx.x * blockDim.x + threadIdx.x å¯¹åº”åˆ—ç´¢å¼• j
     int j = blockIdx.x * blockDim.x + threadIdx.x;
-    // 边界检查
+    // è¾¹ç•Œæ£€æŸ¥
     if (i < rows && j < cols) {
-        // 获取目标行号 idx 和 缩放因子 sca
+        // èŽ·å–ç›®æ ‡è¡Œå· idx å’Œ ç¼©æ”¾å› å­ sca
         int idx = index[i];
         float sca = scales[i];
-        // 计算扁平化的内存偏移量
-        // 使用 long long 防止大模型显存地址溢出
+        // è®¡ç®—æ‰å¹³åŒ–çš„å†…å­˜åç§»é‡
+        // ä½¿ç”¨ long long é˜²æ­¢å¤§æ¨¡åž‹æ˜¾å­˜åœ°å€æº¢å‡º
         long long srcOffset = (long long)i * cols + j;
         long long dstOffset = (long long)idx * cols + j;
-        // 执行逻辑: output[idx * cols + j] += sca * partOutput[i * cols + j];
-        // 注意：这里假设 index 映射的目标行通常是唯一的（在 LLM Batch 推理中通常如此）。
-        // 如果多个 i 映射到同一个 idx，这里存在竞争冒险，但在 FastLLM 上下文中通常是 Scatter 操作。
+        // æ‰§è¡Œé€»è¾‘: output[idx * cols + j] += sca * partOutput[i * cols + j];
+        // æ³¨æ„ï¼šè¿™é‡Œå‡è®¾ index æ˜ å°„çš„ç›®æ ‡è¡Œé€šå¸¸æ˜¯å”¯ä¸€çš„ï¼ˆåœ¨ LLM Batch æŽ¨ç†ä¸­é€šå¸¸å¦‚æ­¤ï¼‰ã€‚
+        // å¦‚æžœå¤šä¸ª i æ˜ å°„åˆ°åŒä¸€ä¸ª idxï¼Œè¿™é‡Œå­˜åœ¨ç«žäº‰å†’é™©ï¼Œä½†åœ¨ FastLLM ä¸Šä¸‹æ–‡ä¸­é€šå¸¸æ˜¯ Scatter æ“ä½œã€‚
         output[dstOffset] = (__nv_bfloat16)((float)output[dstOffset] + sca * (float)partOutput[srcOffset]);
     }
 }
 
-// Host 调用函数
+// Host è°ƒç”¨å‡½æ•°
 void FastllmCudaPickOutput(uint8_t *partOutput, uint8_t *output, int rows, int cols, int *index, float *scales, fastllm::DataType dataType) {
-    // 设定 Block 大小：使用 256 作为通用高性能值
+    // è®¾å®š Block å¤§å°ï¼šä½¿ç”¨ 256 ä½œä¸ºé€šç”¨é«˜æ€§èƒ½å€¼
     dim3 block(256);
     
-    // 设定 Grid 大小：
-    // x 维度：覆盖所有列 (cols)，向上取整
-    // y 维度：覆盖所有行 (rows)
+    // è®¾å®š Grid å¤§å°ï¼š
+    // x ç»´åº¦ï¼šè¦†ç›–æ‰€æœ‰åˆ— (cols)ï¼Œå‘ä¸Šå–æ•´
+    // y ç»´åº¦ï¼šè¦†ç›–æ‰€æœ‰è¡Œ (rows)
     dim3 grid((cols + 255) / 256, rows);
-    // 启动 Kernel
+    // å¯åŠ¨ Kernel
     if (dataType == fastllm::DataType::FLOAT32) {
         FastllmPickOutputKernel<<<grid, block>>>((float*)partOutput, (float*)output, rows, cols, index, scales);
     } else if (dataType == fastllm::DataType::FLOAT16) {
@@ -7357,3 +7357,5 @@ void FastllmCudaPickOutput(uint8_t *partOutput, uint8_t *output, int rows, int c
         exit(0);
     }
 }
+
+

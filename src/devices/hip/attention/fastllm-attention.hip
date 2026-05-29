@@ -2252,7 +2252,7 @@ static hipError_t FastllmDispatchPagedPrefillByHeadDim(uint32_t head_dim, long c
         //     return FastllmDispatchPagedPrefillByCtaTile<192>(cta_tile_q, prefill_params, tmp_v, tmp_s, enable_pdl, stream, op_name);
         case 256:
             return FastllmDispatchPagedPrefillByCtaTile<256>(cta_tile_q, prefill_params, tmp_v, tmp_s, enable_pdl, stream, op_name);
-        // case 512:
+        case 512:
         //    return FastllmDispatchPagedPrefillByCtaTile<512>(cta_tile_q, prefill_params, tmp_v, tmp_s, enable_pdl, stream, op_name);
         default:
             printf("%s: Unsupported head_dim %u\n", op_name, head_dim);

@@ -1,4 +1,4 @@
-//
+﻿//
 // Created by huangyuyang on 6/14/23.
 //
 
@@ -616,7 +616,7 @@ namespace fastllm {
         int kernelSize = intParams.find("kernel")->second;
         int padding = intParams.find("pad")->second; 
         int stride = intParams.find("stride")->second;
-        int groups = inputChannels;  // 组数等于通道数，实现逐通道卷积
+        int groups = inputChannels;  // ç»„æ•°ç­‰äºŽé€šé“æ•°ï¼Œå®žçŽ°é€é€šé“å·ç§¯
 
         output.Allocate();
         FastllmCudaConv1DPerChannelFloat32(input, weight, bias, inputChannels, outputChannels, kernelSize, stride, padding, output);
@@ -692,6 +692,19 @@ namespace fastllm {
         std::string dataTypeInfo = " input.dataType = " + GetDataTypeName(input.dataType) +
                                    ", weight.dataType = " + GetDataTypeName(weight.dataType) +
                                    ", bias.dataType = " + GetDataTypeName(bias.dataType) + ".";
+#ifdef USE_ROCM
+        // Wave GEMV optimization for decode: batch small, moderate hidden_dim
+        bool use_wave_gemv = (n <= 4 && m <= 512 && k <= 8192 && 
+                              bias.dims.size() == 0 &&
+                              (input.dataType == DataType::BFLOAT16 || input.dataType == DataType::FLOAT16 || input.dataType == DataType::FLOAT32) &&
+                              (weight.dataType == DataType::BFLOAT16 || weight.dataType == DataType::FLOAT16 || weight.dataType == DataType::FLOAT32));
+        if (use_wave_gemv) {
+            if (FastllmCudaWaveGEMV(weight, input, output, 1.0f)) {
+                return;
+            }
+        }
+
+#endif
         if (bias.dataType != DataType::FLOAT32) {
             ErrorInFastLLM("Linear error: unsupport bias' dataType." + dataTypeInfo);
         } else if (input.dataType == DataType::FLOAT16) {
@@ -825,8 +838,8 @@ namespace fastllm {
         AssertInFastLLM(weight.dims.size() == 2, "LinearAdd's weight's shape's size should be 2.\n");
         AssertInFastLLM(input.dims.back() == weight.dims[1], "LinearAdd's weight's shape error.\n");
 
-        // output 已经存在且形状正确，不需要 resize
-        // 但需要验证 output 的最后一维与 weight.dims[0] 一致
+        // output å·²ç»å­˜åœ¨ä¸”å½¢çŠ¶æ­£ç¡®ï¼Œä¸éœ€è¦ resize
+        // ä½†éœ€è¦éªŒè¯ output çš„æœ€åŽä¸€ç»´ä¸Ž weight.dims[0] ä¸€è‡´
         AssertInFastLLM(output.dims.back() == weight.dims[0], "LinearAdd's output's shape doesn't match weight.\n");
 
         weight.weightType = WeightType::LINEAR;
@@ -1959,7 +1972,7 @@ namespace fastllm {
                                      const fastllm::FloatDict &floatParams, const fastllm::IntDict &intParams) {
         int topk = intParams.find("topk") != intParams.end() ? intParams.find("topk")->second : 1;
         if (topk > 50) {
-            return false; // 回退到 CPU 实现
+            return false; // å›žé€€åˆ° CPU å®žçŽ°
         }
         return true;
     }
@@ -2154,7 +2167,7 @@ namespace fastllm {
 
         int doQKNorm = intParams.find("doQKNorm") != intParams.end() ? intParams.find("doQKNorm")->second : 1;
 
-        // 分配 qOutput 内存
+        // åˆ†é… qOutput å†…å­˜
         qOutput.Allocate();
 
         if (lastPageLens != nullptr) {
@@ -2370,7 +2383,7 @@ namespace fastllm {
         AssertInFastLLM(ok, "CudaMergeMLAPaged: FastllmCudaMLAPaged failed.\n");
     }
 
-    // 将 output.cpuData 中的值拷入 GPU，按数据类型加到 output.cudaData 中，然后将结果拷回 CPU
+    // å°† output.cpuData ä¸­çš„å€¼æ‹·å…¥ GPUï¼ŒæŒ‰æ•°æ®ç±»åž‹åŠ åˆ° output.cudaData ä¸­ï¼Œç„¶åŽå°†ç»“æžœæ‹·å›ž CPU
     void ReduceSumFromCPU(Data &output) {
         int len = output.Count(0);
         FastllmCudaAddHostToDevice(output.cudaData, output.cpuData, len, output.dataType);
@@ -2429,7 +2442,7 @@ namespace fastllm {
         int n = index.dims[0];
         int topk = index.dims[1];
         
-        // 计算最大专家数量
+        // è®¡ç®—æœ€å¤§ä¸“å®¶æ•°é‡
         int maxExpert = 0;
         for (int i = 0; i < n; i++) {
             for (int j = 0; j < topk; j++) {
@@ -2439,9 +2452,9 @@ namespace fastllm {
                 }
             }
         }
-        int m = maxExpert + 1; // 专家数量
+        int m = maxExpert + 1; // ä¸“å®¶æ•°é‡
         
-        std::vector <std::vector <std::pair <int, float> > > expertTasks; // expertTasks[i]代表专家i的task, expertTasks[i][j] = (第j个任务对应的行数， 权重)
+        std::vector <std::vector <std::pair <int, float> > > expertTasks; // expertTasks[i]ä»£è¡¨ä¸“å®¶içš„task, expertTasks[i][j] = (ç¬¬jä¸ªä»»åŠ¡å¯¹åº”çš„è¡Œæ•°ï¼Œ æƒé‡)
         expertTasks.resize(m + 1);
         for (int b = 0; b < batch; b++) {
             expertTasks[0].push_back(std::make_pair(b, sharedScale));
@@ -2551,7 +2564,7 @@ total += weights[nextExpert * 2 + 1]->GetBytes();
             DoCudaLinearReshape(tempSwiglu, *weights[i * 2 + 1], tempOutput);
             DoCudaLinear(tempSwiglu, *weights[i * 2 + 1], *GetEmptyData(), tempOutput);
 
-            // debug: 输出指定token关联的所有专家计算结果（通过环境变量 FASTLLM_DEBUG_TOKEN_ID 指定token id，逗号分隔）
+            // debug: è¾“å‡ºæŒ‡å®štokenå…³è”çš„æ‰€æœ‰ä¸“å®¶è®¡ç®—ç»“æžœï¼ˆé€šè¿‡çŽ¯å¢ƒå˜é‡ FASTLLM_DEBUG_TOKEN_ID æŒ‡å®štoken idï¼Œé€—å·åˆ†éš”ï¼‰
             /* {
                 static std::set<int> debugTokenIds;
                 static bool debugTokenIdInited = false;
@@ -3155,7 +3168,7 @@ total += weights[nextExpert * 2 + 1]->GetBytes();
                 std::vector <std::pair <int, float> > v;
                 v.resize(topk + 1);
                 for (int j = 0; j < topk; j++) {
-                    // index 存储的是专家索引（从0开始），需要+1因为0表示shared expert
+                    // index å­˜å‚¨çš„æ˜¯ä¸“å®¶ç´¢å¼•ï¼ˆä»Ž0å¼€å§‹ï¼‰ï¼Œéœ€è¦+1å› ä¸º0è¡¨ç¤ºshared expert
                     int expertIdx = indexData[j];
                     float expertScore = scoreData[j];
                     v[j] = std::make_pair(expertIdx + 1, expertScore);
@@ -3206,7 +3219,7 @@ total += weights[nextExpert * 2 + 1]->GetBytes();
 
                 FastllmCudaMemset0(output.cudaData, output.GetBytes());
                 
-                // 计算最大专家数量
+                // è®¡ç®—æœ€å¤§ä¸“å®¶æ•°é‡
                 int maxExpert = 0;
                 for (int i = 0; i < n; i++) {
                     for (int j = 0; j < topk; j++) {
@@ -3216,9 +3229,9 @@ total += weights[nextExpert * 2 + 1]->GetBytes();
                         }
                     }
                 }
-                int m = maxExpert + 1; // 专家数量
+                int m = maxExpert + 1; // ä¸“å®¶æ•°é‡
                 
-                std::vector <std::vector <std::pair <int, float> > > expertTasks; // expertTasks[i]代表专家i的task, expertTasks[i][j] = (第j个任务对应的行数， 权重)
+                std::vector <std::vector <std::pair <int, float> > > expertTasks; // expertTasks[i]ä»£è¡¨ä¸“å®¶içš„task, expertTasks[i][j] = (ç¬¬jä¸ªä»»åŠ¡å¯¹åº”çš„è¡Œæ•°ï¼Œ æƒé‡)
                 expertTasks.resize(m + 1);
                 for (int b = 0; b < batch; b++) {
                     expertTasks[0].push_back(std::make_pair(b, sharedScale));
@@ -3532,7 +3545,7 @@ total += weights[nextExpert * 2 + 1]->GetBytes();
         Data &cache = *(datas.find("cache")->second);
         Data &input = *(datas.find("input")->second);
 
-        // CUDA实现分页缓存追加
+        // CUDAå®žçŽ°åˆ†é¡µç¼“å­˜è¿½åŠ 
         int numHeads = input.dims[0];
         int seqLen = input.dims[1];
         int headDim = input.dims[2];
@@ -3547,18 +3560,18 @@ total += weights[nextExpert * 2 + 1]->GetBytes();
         uint8_t *pagedData = (uint8_t*)pagedKVCache->cudaData;
         uint8_t *inputData = (uint8_t*)input.cudaData;
         
-        // 计算当前page的剩余空间
+        // è®¡ç®—å½“å‰pageçš„å‰©ä½™ç©ºé—´
         int remainingInCurrentPage = 0;
         if (cache.pageIndex.size() > 0) {
             remainingInCurrentPage = pageLen - cache.lastPageLen;
         }
         
-        // 先填充当前page的剩余空间
+        // å…ˆå¡«å……å½“å‰pageçš„å‰©ä½™ç©ºé—´
         if (remainingInCurrentPage > 0 && tokensToAppend > 0) {
             int currentPageIdx = cache.pageIndex.back();
             int copyLen = std::min(remainingInCurrentPage, tokensToAppend);
             
-            // kernel复制 input 到 pagedKVCacheData 的当前 page 的剩余空间
+            // kernelå¤åˆ¶ input åˆ° pagedKVCacheData çš„å½“å‰ page çš„å‰©ä½™ç©ºé—´
             // input: [numHeads, seqLen, headDim], pagedKVCacheData: [maxPages, pageLen, numHeads, headDim]
             FastllmCudaPagedCacheCopy(
                 pagedData, // dst: pagedKVCache->cudaData
@@ -3572,7 +3585,7 @@ total += weights[nextExpert * 2 + 1]->GetBytes();
                 seqLen,    // input sequence length
                 inputOffset,
                 copyLen,
-                cache.lastPageLen // page offset: 从当前page的lastPageLen位置开始写入
+                cache.lastPageLen // page offset: ä»Žå½“å‰pageçš„lastPageLenä½ç½®å¼€å§‹å†™å…¥
             );
             
             cache.lastPageLen += copyLen;
@@ -3580,13 +3593,13 @@ total += weights[nextExpert * 2 + 1]->GetBytes();
             inputOffset += copyLen;
         }
         
-        // 如果还有剩余的数据，需要分配新的 pages
+        // å¦‚æžœè¿˜æœ‰å‰©ä½™çš„æ•°æ®ï¼Œéœ€è¦åˆ†é…æ–°çš„ pages
         while (tokensToAppend > 0) {
             int newPageIdx = cache.pagedKVCacheData->GetUnusedPageIndex(true);
             cache.pageIndex.push_back(newPageIdx);
             int copyLen = std::min(pageLen, tokensToAppend);
 
-            // kernel复制 input 的一个 page 到 pagedKVCacheData 的新 page
+            // kernelå¤åˆ¶ input çš„ä¸€ä¸ª page åˆ° pagedKVCacheData çš„æ–° page
             // input: [numHeads, seqLen, headDim], pagedKVCacheData: [maxPages, pageLen, numHeads, headDim]
             FastllmCudaPagedCacheCopy(
                 pagedData, // dst: pagedKVCache->cudaData
@@ -3600,7 +3613,7 @@ total += weights[nextExpert * 2 + 1]->GetBytes();
                 seqLen,    // input sequence length
                 inputOffset,
                 copyLen,
-                0 // page offset: 新page从0开始写入
+                0 // page offset: æ–°pageä»Ž0å¼€å§‹å†™å…¥
             );
 
             cache.lastPageLen = copyLen;
@@ -3695,7 +3708,7 @@ total += weights[nextExpert * 2 + 1]->GetBytes();
         uint8_t *inputData = (uint8_t*)input.cudaData;
         int32_t *idxDataCuda = (int32_t*)insertIndexs.cudaData;
         int32_t *posDataCuda = (int32_t*)insertPositions.cudaData;
-        // 使用batch函数一次性处理所有batch
+        // ä½¿ç”¨batchå‡½æ•°ä¸€æ¬¡æ€§å¤„ç†æ‰€æœ‰batch
         FastllmCudaPagedCacheCopyBatch(
             pagedData,
             idxDataCuda,
@@ -3727,7 +3740,7 @@ total += weights[nextExpert * 2 + 1]->GetBytes();
         insertIndexs.Resize({batch});
         insertPositions.Resize({batch});
         
-        // 先在CPU上准备数据
+        // å…ˆåœ¨CPUä¸Šå‡†å¤‡æ•°æ®
         auto &idxDataHost = insertIndexs.cpuIntDatas;
         auto &posDataHost = insertPositions.cpuIntDatas;
         idxDataHost.resize(batch);
@@ -3845,7 +3858,7 @@ total += weights[nextExpert * 2 + 1]->GetBytes();
         int batch = intParams.find("pastKeys___batch") != intParams.end() ? intParams.find("pastKeys___batch")->second : 1;
         AssertInFastLLM(batch > 0, "CudaGeneratePagedBatchParamsOp: batch must be positive.\n");
         
-        // 先在CPU上计算，然后拷贝到GPU
+        // å…ˆåœ¨CPUä¸Šè®¡ç®—ï¼Œç„¶åŽæ‹·è´åˆ°GPU
         auto &qSizesHost = qSizes.cpuIntDatas;
         qSizesHost.resize(batch + 1);
 
@@ -3857,7 +3870,7 @@ total += weights[nextExpert * 2 + 1]->GetBytes();
 
         auto &pageIndexsHost = pageIndexs.cpuIntDatas;
         
-        // 计算总的page数量
+        // è®¡ç®—æ€»çš„pageæ•°é‡
         int totalPages = 0;
         for (int b = 0; b < batch; b++) {
             totalPages += pastKeys[b]->pageIndex.size();
@@ -3877,7 +3890,7 @@ total += weights[nextExpert * 2 + 1]->GetBytes();
         lastPageLens.Resize({batch});
         pageIndexs.Resize({totalPageSlots});
 
-        // 生成qSizes: 如果有 seqLens 则按 seqLens 的前缀和，否则按 [0, 1, 2, ..., batch]
+        // ç”ŸæˆqSizes: å¦‚æžœæœ‰ seqLens åˆ™æŒ‰ seqLens çš„å‰ç¼€å’Œï¼Œå¦åˆ™æŒ‰ [0, 1, 2, ..., batch]
         int seqLensSize = intParams.find("seqLens___size") != intParams.end() ? intParams.find("seqLens___size")->second : 0;
         bool lastPageLensOnDevice = seqLensSize == 0 &&
             intParams.find("lastPageLensOnDevice") != intParams.end() &&
@@ -3897,20 +3910,20 @@ total += weights[nextExpert * 2 + 1]->GetBytes();
             }
         }
         
-        // 生成pageSizes, pageIndexs, lastPageLens
+        // ç”ŸæˆpageSizes, pageIndexs, lastPageLens
         int pageOffset = 0;
         pageSizesHost[0] = 0;
         for (int b = 0; b < batch; b++) {
             int numPages = pastKeys[b]->pageIndex.size();
             pageSizesHost[b + 1] = pageSizesHost[b] + numPages;
             
-            // 复制pageIndex
+            // å¤åˆ¶pageIndex
             for (int i = 0; i < numPages; i++) {
                 pageIndexsHost[pageOffset + i] = pastKeys[b]->pageIndex[i];
             }
             pageOffset += numPages;
             
-            // 设置lastPageLen
+            // è®¾ç½®lastPageLen
             lastPageLensHost[b] = pastKeys[b]->lastPageLen;
         }
 
@@ -3962,3 +3975,16 @@ total += weights[nextExpert * 2 + 1]->GetBytes();
         }
     }
 }
+
+
+// ============================================
+// Wave GEMV wrapper for decode optimization (ROCM)
+// ============================================
+#ifdef USE_ROCM
+bool FastllmCudaWaveGEMV(const fastllm::Data &weight, const fastllm::Data &input, fastllm::Data &output, float scale) {
+    // For now, just return false to use the default cublas path
+    // Wave GEMV optimization will be enabled in a future update
+    return false;
+}
+#endif
+
