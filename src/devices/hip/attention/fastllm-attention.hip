@@ -1005,7 +1005,9 @@ mask_mode = MaskMode::kCausal;
     //  HND 
     // - stride_n (token  stride) = head_dim
     // - stride_h (head  stride) = seq_len * head_dim
-    bool use_flashinfer = (head_dim_qk == 128 && head_dim_vo == 128 && !use_custom_mask);
+    bool use_flashinfer = ((head_dim_qk == 64 || head_dim_qk == 128 || head_dim_qk == 256 || head_dim_qk == 512) && 
+                         (head_dim_vo == 64 || head_dim_vo == 128 || head_dim_vo == 256 || head_dim_vo == 512) && 
+                         !use_custom_mask);
 // use_flashinfer = false;
     // 
     if (use_flashinfer) {
@@ -1087,14 +1089,18 @@ mask_mode = MaskMode::kCausal;
                     10000.0f                        // rope_theta ( RoPE)
                 );
                 
-                //  FlashInfer prefill  mask_mode  variant
-                if (mask_mode == MaskMode::kCausal) {
-                    status = SinglePrefillWithKVCacheDispatched<128, 128, PosEncodingMode::kNone, false, MaskMode::kCausal, DefaultAttention<false, false, false, false>>(
-                        params, tmp, stream);
-                } else {
-                    status = SinglePrefillWithKVCacheDispatched<128, 128, PosEncodingMode::kNone, false, MaskMode::kNone, DefaultAttention<false, false, false, false>>(
-                        params, tmp, stream);
-                }
+                //  FlashInfer prefill with DISPATCH_HEAD_DIM for dynamic head_dim
+                DISPATCH_HEAD_DIM(head_dim_qk, HEAD_DIM_QK, {
+                    DISPATCH_HEAD_DIM(head_dim_vo, HEAD_DIM_VO, {
+                        if (mask_mode == MaskMode::kCausal) {
+                            status = SinglePrefillWithKVCacheDispatched<HEAD_DIM_QK, HEAD_DIM_VO, PosEncodingMode::kNone, false, MaskMode::kCausal, DefaultAttention<false, false, false, false>>(
+                                params, tmp, stream);
+                        } else {
+                            status = SinglePrefillWithKVCacheDispatched<HEAD_DIM_QK, HEAD_DIM_VO, PosEncodingMode::kNone, false, MaskMode::kNone, DefaultAttention<false, false, false, false>>(
+                                params, tmp, stream);
+                        }
+                    });
+                })
             }
             
             if (tmp != nullptr) {
