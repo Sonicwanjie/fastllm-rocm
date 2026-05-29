@@ -1231,8 +1231,8 @@ FastllmCudaPermute(*((fastllm::Data*)&output), {1, 0, 2});
     // Based on bong-water-water-bong/rocm-cpp kv_cache_attn kernel pattern
     // Online softmax with cooperative wave reduction — no GPU→CPU sync per layer
     // ================================================================================
-    bool use_flash_decode_kernel = (batch == 1 && q0 == num_qo_heads && q2 == head_dim_qk && 
-                                   (q2 == 64 || q2 == 128 || q2 == 256 || q2 == 512) && maskType == 0);
+    bool use_flash_decode_kernel = (batch == 1 && q0 == num_qo_heads && q2 == head_dim_qk &&
+                                   (q2 == 64 || q2 == 128 || q2 == 256 || q2 == 512) && !use_custom_mask);
     
     if (use_flash_decode_kernel ) {
         // Decode-only path: batch=1, single Q token, cooperative wave softmax
